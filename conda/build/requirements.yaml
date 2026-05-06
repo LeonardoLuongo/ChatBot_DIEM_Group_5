@@ -1,0 +1,18 @@
+name: nlp_project
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+
+  # --- Core Python & Jupyter ---
+  - python=3.10
+  - pip
+  - pip:
+    - langchain
+    - langchain_community
+    - langchain_huggingface
+    - langchain_ollama
+    - bs4
+
