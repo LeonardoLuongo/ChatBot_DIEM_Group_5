@@ -15,4 +15,8 @@ dependencies:
     - langchain_huggingface
     - langchain_ollama
     - bs4
+    - ragas
+    - gspread
+    - google-auth
+    - google-auth-oauthlib
 
