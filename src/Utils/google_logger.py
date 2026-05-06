@@ -21,7 +21,7 @@ if PROJECT_ROOT is None:
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-import config as cfg
+import configs as cfg
 
 class GoogleSheetLogger:
     def __init__(self):
