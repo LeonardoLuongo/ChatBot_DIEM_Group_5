@@ -15,13 +15,15 @@ import os
 # ==========================================
 # 1. SETUP PATHS
 # ==========================================
-CURRENT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = CURRENT_DIR.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+CURRENT_DIR = Path(os.getcwd())
+SRC_PATH = Path(__file__).resolve().parent.parent
+QDRANTDB_PATH = SRC_PATH / "VectorDB" / "qdrant_trafilatura_1800_d6"
+SESSION_DIR = SRC_PATH / "session"
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
 
-HISTORY_FILE = PROJECT_ROOT / "session_history.jsonl"
-GUARDRAILS_LOG_FILE = PROJECT_ROOT / "guardrails_log.jsonl"
+HISTORY_FILE = SESSION_DIR / "session_history.jsonl"
+GUARDRAILS_LOG_FILE = SESSION_DIR / "guardrails_log.jsonl"
 
 #Svuota la history fisica all'avvio del programma
 try:
@@ -104,7 +106,7 @@ class AgenticRag:
         self.evaluator = RelevanceEvaluator(self.reranker)
         
         # Percorso DB Qdrant
-        self.qdrant_store_dir = PROJECT_ROOT / "VectorDB" / "qdrant_trafilatura_1800_d6" 
+        self.qdrant_store_dir = QDRANTDB_PATH
         try:
             self.qdrant_service = QdrantService(store_dir_path=str(self.qdrant_store_dir))
             print(" ✅ Qdrant Vector DB connesso.")
@@ -347,7 +349,7 @@ minimal_css = """
 .gradio-container { max-width: 100% !important; padding: 0 20px !important; }
 """
 
-logo_path = os.path.join(PROJECT_ROOT, "logo_ChatBot_DIEM_Gruop5.png")
+logo_path = os.path.join(SRC_PATH, "logo_ChatBot_DIEM_Gruop5.png")
 
 with gr.Blocks(fill_width=True, css=minimal_css) as demo:
     with gr.Row():

@@ -4,3 +4,6 @@ searxng_docker/warp-data/**
 *.sqlite
 *.lock
 **/ValidationSet/*.json
+**/src/*.jsonl
+src/guardrails_log.jsonl
+*/session/*.jsonl
