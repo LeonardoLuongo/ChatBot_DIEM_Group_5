@@ -1,0 +1,11 @@
+# Ignore the entire data directory
+/data/
+
+# Ignore a specific folder
+/src/legacy_code/
+
+# Ignore all PDF files
+*.pdf
+
+ValidationSet/
+VectorDB/

@@ -1,0 +1,91 @@
+use_default_settings: true
+
+server:
+  secret_key: "MIA_CHIAVE_SEGRETA_SUPER_SICURA_123"
+  bind_address: "0.0.0.0"
+  port: 8080
+  image_proxy: true
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "it"
+  formats:
+    - html
+    - json
+  # Aggiungiamo esplicitamente le categorie
+  default_categories:
+    - general
+  # Questi verranno usati ora che LangChain non li sovrascrive
+  default_engines:
+    - duckduckgo
+    - brave
+    - google
+    - bing
+    - qwant
+    - yahoo
+    - mojeek
+
+outgoing:
+  request_timeout: 25.0       # Alzato per dare tempo a WARP
+  max_request_timeout: 40.0   # Limite massimo assoluto
+  pool_connections: 100
+  pool_maxsize: 100
+  
+  # Importante: Se un motore fallisce (es. Google blocca un IP Warp), SearxNG riprova
+  max_retries: 2
+  
+  useragent_fallback: "random"
+  
+  proxies:
+    http:
+      - "socks5://warp:1080"
+    https:
+      - "socks5://warp:1080"
+
+# ==========================================================
+# CONFIGURAZIONE MOTORI
+# ==========================================================
+engines:
+  - name: google
+    engine: google
+    use_mobile_ui: false
+    timeout: 25.0             # Alzato per Google sotto proxy
+    weight: 2.0
+    disabled: false
+
+  - name: bing
+    engine: bing
+    timeout: 20.0
+    weight: 1.5
+    disabled: false
+
+  - name: brave
+    engine: brave
+    timeout: 15.0
+    weight: 1.5
+    disabled: false
+
+  - name: duckduckgo
+    engine: duckduckgo
+    timeout: 15.0
+    weight: 1.0
+    disabled: false
+
+  - name: qwant
+    engine: qwant
+    timeout: 15.0
+    weight: 1.0
+    disabled: false
+
+  - name: yahoo
+    engine: yahoo
+    timeout: 20.0
+    weight: 1.0
+    disabled: false
+    
+  - name: mojeek
+    engine: mojeek
+    timeout: 15.0
+    weight: 0.5
+    disabled: false

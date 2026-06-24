@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  # Container proxy per Cloudflare WARP
+  warp:
+    image: caomingjun/warp
+    container_name: warp
+    restart: always
+    # NET_ADMIN e i sysctls sono necessari a WARP/Wireguard per creare la rete virtuale
+    cap_add:
+      - NET_ADMIN
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+      - net.ipv4.conf.all.src_valid_mark=1
+    volumes:
+      - ./warp-data:/var/lib/cloudflare-warp  # Mantiene l'account/registrazione dispositivo permanente
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng  # La cartella con il tuo settings.yml
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+    depends_on:
+      - warp

@@ -8,9 +8,7 @@
       "program": "${file}",
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}"
-      }
+      "envFile": "${workspaceFolder}/.env"
     },
     {
       "name": "Python: Run (No Debug)",
@@ -20,9 +18,18 @@
       "console": "integratedTerminal",
       "cwd": "${workspaceFolder}",
       "noDebug": true,
-      "env": {
-        "PYTHONPATH": "${workspaceFolder}"
-      }
+      "envFile": "${workspaceFolder}/.env"
+    },
+    {
+      "name": "Python: Release Ottimizzata",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "noDebug": true,
+      "pythonArgs": ["-O"],
+      "envFile": "${workspaceFolder}/.env"
     }
   ]
 }

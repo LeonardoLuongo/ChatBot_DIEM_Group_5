@@ -4,7 +4,6 @@ from datetime import datetime
 from pathlib import Path
 import sys
 
-# 1. CERCHIAMO FISICAMENTE LA CARTELLA CHE CONTIENE config.py
 def find_project_root():
     current = Path(__file__).resolve().parent
     for _ in range(5):
@@ -15,7 +14,7 @@ def find_project_root():
 
 PROJECT_ROOT = find_project_root()
 if PROJECT_ROOT is None:
-    print("[ERROR] Impossibile trovare la cartella radice (quella con config.py)!")
+    print("[ERROR] Impossibile trovare la root!")
     sys.exit(1)
 
 if str(PROJECT_ROOT) not in sys.path:
@@ -48,7 +47,7 @@ class GoogleSheetLogger:
                              context_prec, context_rec, ans_rel, faith, fact_f1, 
                              prec, rec, inf_time="N/A", notes="", extra_metrics=None):
         """
-        Invia i dati al foglio seguendo l'ordine esatto dello screenshot:
+        Invia i dati al foglio seguendo l'ordine:
         A: Timestamp, B: Tester, C: LLM, D: Embedding, E: Retrieval, F: Context Prec, 
         G: Context Rec, H: Ans Rel, I: Faith, J: F1 Score, K: Precision, L: Recall, 
         M: Inf Time, N: Notes, O: Extra
@@ -91,7 +90,7 @@ class GoogleSheetLogger:
 if __name__ == "__main__":
     logger = GoogleSheetLogger()
     
-    # Esempio con i nuovi campi Precision e Recall
+    # Esempio 
     logger.log_ragas_evaluation(
         tester="Francesco",
         llm_model="Qwen2.5-7B-Instruct",
@@ -102,9 +101,9 @@ if __name__ == "__main__":
         ans_rel="0,85",
         faith="0,98",
         fact_f1="0,82",
-        prec="0,84",   # Colonna K
-        rec="0,80",    # Colonna L
+        prec="0,84",   
+        rec="0,80",   
         inf_time="1200",
-        notes="Test con integrazione Precision/Recall classiche",
+        notes="Test",
         extra_metrics=["N/A"]
     )

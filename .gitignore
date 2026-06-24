@@ -1,1 +1,6 @@
-__pycache__/
+**/__pycache__/
+.env
+searxng_docker/warp-data/**
+*.sqlite
+*.lock
+**/ValidationSet/*.json

@@ -1,0 +1,441 @@
+import os
+import sys
+import time
+import gc
+import re
+import torch
+import ssl
+import gradio as gr
+from datetime import datetime
+from pathlib import Path
+
+from langchain_google_genai import ChatGoogleGenerativeAI
+import os 
+
+# ==========================================
+# 1. SETUP PATHS
+# ==========================================
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+HISTORY_FILE = PROJECT_ROOT / "session_history.jsonl"
+GUARDRAILS_LOG_FILE = PROJECT_ROOT / "guardrails_log.jsonl"
+
+#Svuota la history fisica all'avvio del programma
+try:
+    if os.path.exists(HISTORY_FILE):
+        with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+            pass # Aprire in modalità 'w' e non scrivere nulla svuota il file
+        print("🧹 [SYSTEM] File session_history.jsonl azzerato all'avvio.")
+except Exception as e:
+    print(f"⚠️ [SYSTEM] Impossibile svuotare la history all'avvio: {e}")
+
+# ==========================================
+# 2. IMPORT COMPONENTI
+# ==========================================
+from langchain_ollama import ChatOllama
+from langchain_community.utilities import SearxSearchWrapper
+from WebBasedRAG.RAGComponents.relevance_evaluator import RelevanceEvaluator
+from WebBasedRAG.RAGComponents.agent import SupervisorAgent
+from WebBasedRAG.RAGComponents.judge import AnswerJudge
+from WebBasedRAG.RAGComponents.planner import QueryPlanner
+from WebBasedRAG.RAGComponents.generator import AnswerGenerator
+from WebBasedRAG.RAGComponents.router import IntentRouter # <--- AGGIUNTO ROUTER
+from WebBasedRAG.RAGComponents.embeddings.nomic_embeddings import NomicEmbeddings
+from WebBasedRAG.RAGComponents.session_state import GlobalSessionState
+from WebBasedRAG.RAGComponents.embeddings.gte_reranker import BGE8KReranker
+
+# Utils
+from Utils.history_rewriter import load_history, rewrite_with_history, append_history_turn
+from Utils.guardrails import validate_input, validate_output, refusal_message, GuardrailLogger
+
+# Web Explorer Components
+from WebBasedRAG.RAGComponents.web_explorer_components.browser import BrowserEngine
+from WebBasedRAG.RAGComponents.web_explorer_components.scraping import HTMLCrawler, PDFExtractor
+from WebBasedRAG.RAGComponents.web_explorer_components.utils import DocumentChunker
+from WebBasedRAG.RAGComponents.web_explorer_components.retrieval import RetrievalEngine
+from WebBasedRAG.RAGComponents.web_explorer_components.links import SmartLinkGenerator, PDFHighlightServer
+from WebBasedRAG.RAGComponents.web_explorer_components.explorer import WebExplorer
+from WebBasedRAG.RAGComponents.web_explorer_components.search import (
+    QueryOptimizer, GoogleSearch, BingSearch, SearxSearch, HybridSearchOrchestrator
+)
+
+# Tools
+from WebBasedRAG.RAGComponents.tools.core.registry import ToolRegistry
+from WebBasedRAG.RAGComponents.tools.services.easycourse_service import EasyCourseService
+from WebBasedRAG.RAGComponents.tools.services.professors_service import ProfessorsService
+from WebBasedRAG.RAGComponents.tools.providers.datetime_provider import DateTimeToolProvider
+from WebBasedRAG.RAGComponents.tools.providers.websearch_provider import WebSearchToolProvider
+from WebBasedRAG.RAGComponents.tools.providers.easycourse_provider import EasyCourseToolProvider
+from WebBasedRAG.RAGComponents.tools.providers.professors_provider import ProfessorsToolProvider
+from WebBasedRAG.RAGComponents.tools.providers.math_provider import MathToolProvider
+from WebBasedRAG.RAGComponents.tools.services.qdrant_service import QdrantService
+from WebBasedRAG.RAGComponents.tools.providers.qdrant_provider import QdrantToolProvider
+
+import threading
+import requests
+
+# ==========================================
+# 3. AGENTIC RAG SYSTEM
+# ==========================================
+class AgenticRag:
+    def __init__(self):
+        print("-- Inizializzazione Sistema: AGENT + ROUTER + VECTOR DB + HISTORY...")
+        ssl._create_default_https_context = ssl._create_unverified_context
+        self.logs = []
+        self.guardrail_logger = GuardrailLogger(GUARDRAILS_LOG_FILE)
+        
+        # --- Configurazione Modelli Google Gemini ---
+        # Assicurati di avere la variabile d'ambiente GOOGLE_API_KEY impostata.
+        
+        # Consiglio flash per ruoli veloci/economici e pro per la generazione finale complessa
+        self.explorer_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0)
+        self.agent_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0) 
+        self.judge_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.3)
+        
+        # Per il generatore finale potresti voler usare il modello 'pro' se serve più ragionamento
+        self.gen_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0) 
+        
+        
+        self.embeddings_model = NomicEmbeddings()
+        self.reranker = BGE8KReranker()
+        self.evaluator = RelevanceEvaluator(self.reranker)
+        
+        # Percorso DB Qdrant
+        self.qdrant_store_dir = PROJECT_ROOT / "VectorDB" / "qdrant_trafilatura_1800_d6" 
+        try:
+            self.qdrant_service = QdrantService(store_dir_path=str(self.qdrant_store_dir))
+            print(" ✅ Qdrant Vector DB connesso.")
+        except Exception as e:
+            print(f" ⚠️ [QDRANT WARN] Impossibile avviare il Vector DB: {e}")
+            self.qdrant_service = None
+
+        self.session_state = GlobalSessionState()
+        self.browser_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+        self.initialize_system_with_retry()
+
+    def initialize_system_with_retry(self):
+        try:
+            self.browser_engine = BrowserEngine(self.browser_path)
+            self.query_opt = QueryOptimizer(self.explorer_llm)
+            
+            # Orchestrazione Ricerca Ibrida
+            google = GoogleSearch(self.browser_engine)
+            bing = BingSearch(self.browser_engine)
+            searx = SearxSearch(SearxSearchWrapper(searx_host="http://127.0.0.1:8080", categories=["general"]))
+            search_orch = HybridSearchOrchestrator([google, bing, searx])
+            
+            self.explorer = WebExplorer(
+                query_optimizer=self.query_opt, 
+                search_orchestrator=search_orch, 
+                html_crawler=HTMLCrawler(), 
+                pdf_extractor=PDFExtractor(), 
+                chunker=DocumentChunker(), 
+                retrieval_engine=RetrievalEngine(self.embeddings_model, self.evaluator), 
+                smart_link_gen=SmartLinkGenerator(), 
+                pdf_server=PDFHighlightServer()
+            )
+            
+            # Registrazione Tools
+            registry = ToolRegistry()
+            registry.register_provider(DateTimeToolProvider())
+            
+            # Iniezione dipendenze nei service (LLM + Evaluator)
+            easycourse_service = EasyCourseService(llm=self.agent_llm, evaluator=self.evaluator)
+            registry.register_provider(EasyCourseToolProvider(easycourse_service, self.session_state))
+            
+            if self.qdrant_service: 
+                registry.register_provider(QdrantToolProvider(self.qdrant_service, self.session_state, self.evaluator))
+            
+            registry.register_provider(WebSearchToolProvider(self.explorer, self.session_state, debug_mode=True))
+            registry.register_provider(ProfessorsToolProvider(ProfessorsService(), self.session_state, self.explorer))
+            registry.register_provider(MathToolProvider(session_state=self.session_state))
+            
+            tools = registry.get_all_tools()
+            
+            # Componenti Core
+            self.router = IntentRouter(llm=self.agent_llm)
+            self.agent = SupervisorAgent(base_llm=self.agent_llm, tools=tools, session_state=self.session_state, max_retries=10)
+            self.judge = AnswerJudge(llm=self.judge_llm)
+            self.planner = QueryPlanner(llm=self.judge_llm, tools=tools) 
+            self.generator = AnswerGenerator(llm=self.gen_llm)
+            
+        except Exception as e: 
+            print(f"Errore inizializzazione sistema: {e}")
+
+    def log(self, module, msg, color="#fb923c"):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        entry = f"<div style='margin-bottom:8px; font-family: monospace; font-size: 13px; border-left: 3px solid {color}; padding-left: 10px;'><span style='color: {color}; font-weight: bold;'>[{timestamp}] {module}:</span><br>{msg}</div>"
+        self.logs.append(entry)
+        return "".join(self.logs[::-1])
+
+    def run(self, raw_query):
+        self.logs = []
+        self.session_state.clear()
+        gc.collect()
+        if torch.cuda.is_available(): torch.cuda.empty_cache()
+
+        yield self.log("SISTEMA", f"Inizio elaborazione query: <i>'{raw_query}'</i>", color="#94a3b8"), "⏳ *Verifica sicurezza...*"
+        
+        # 1. GUARDRAILS (Input)
+        input_check = validate_input(raw_query, logger=self.guardrail_logger)
+        if not input_check.allowed:
+            yield self.log("GUARDRAILS", "🚫 Richiesta bloccata per violazione policy.", color="#ef4444"), refusal_message(input_check.reasons)
+            return 
+
+        # 2. HISTORY & REWRITING
+        history = load_history(HISTORY_FILE)
+        yield self.log("MEMORIA", f"Cronologia caricata: {len(history)} turni.", color="#a855f7"), "⏳ *Analisi contesto...*"
+        
+        rewrite_result = rewrite_with_history(query=raw_query, history=history, model="ministral-3:8b", temperature=0.0)
+        clean_query = rewrite_result.final_query
+        
+        history_log = f"Query contestualizzata: <b>'{clean_query}'</b>" if rewrite_result.uses_history else "Query considerata autonoma."
+        yield self.log("HISTORY", history_log, color="#3b82f6"), "⏳ *Routing query...*"
+
+        # 3. INTENT ROUTING (Gateway)
+        decision = self.router.route(clean_query)
+        yield self.log("ROUTER", f"🧭 <b>Intento:</b> {decision.intent}<br><i>{decision.reasoning}</i>", color="#8b5cf6"), "⏳ *Pianificazione...*"
+
+        if decision.intent == "DIRECT_CHAT":
+            yield self.log("SISTEMA", "Generazione risposta diretta (No RAG).", color="#2dd4bf"), "⏳ *Generazione...*"
+            # 1. Recupera lo storico effettivo della conversazione
+            context = self.session_state.get_all_context()
+            
+            # 2. Costruisci un prompt dinamico che include il ragionamento del router
+            system_prompt = f"""You are the final conversational agent. The user's input has been routed to you 
+without querying the database or external tools for the following reason:
+'{decision.reasoning}'
+
+Recent conversation history:
+{context}
+
+INSTRUCTIONS:
+- Use the routing reason as internal context to understand how to handle the user (e.g., if the question is adversarial/misleading, handle it diplomatically; if it is small talk, be polite).
+- DO NOT repeat the routing reason to the user; use it only to calibrate your tone and response.
+- If the user asks follow-up questions (e.g., "are you sure?"), use the conversation history to understand the context of their query."""
+            
+            # 3. Passa il prompt dinamico al generatore
+            response = self.generator.generate(clean_query, system_prompt)
+            
+            append_history_turn(HISTORY_FILE, user=raw_query, final_query=clean_query, assistant=response.answer)
+            yield self.log("SISTEMA", "Completato.", color="#22c55e"), response.answer
+            return
+
+        # 4. LOOP AGENTICO RAG
+        feedback_for_search = ""; is_resolved = False; context = ""; is_success = False; final_result = None
+
+        for global_iter in range(3):
+            if is_resolved: break
+            
+            # --- PIANIFICAZIONE ---
+            plan_obj = self.planner.generate_plan(clean_query, previous_feedback=feedback_for_search, current_iter=global_iter+1)
+            plan_log = f"🎯 <b>Strategia (Giro {global_iter+1}):</b> {plan_obj.reasoning}<br>"
+            for s in plan_obj.steps: plan_log += f"&nbsp;&nbsp;📍 Step {s.step_number} [{s.tool_name}]: {s.tool_intent}<br>"
+            yield self.log("PLANNER", plan_log, color="#60a5fa"), "⏳ *Esecuzione Agent...*"
+            
+            # --- AGENTE (Tool Execution) ---
+            yield self.log("AGENTE", "🤖 Analisi documenti e utilizzo tool...", color="#fb923c"), "⏳ *Recupero dati in corso...*"
+            plan_text = "\n".join([f"Step {s.step_number}: use {s.tool_name} - {s.tool_intent}" for s in plan_obj.steps])
+            
+            current_context, found_something = self.agent.run(user_query=clean_query, plan=plan_text, previous_feedback=feedback_for_search)
+            context = current_context; is_success = found_something
+            print("Context:" + "="*50 + f"\n{context}\n" + "="*50 + "\n")
+            if not found_something:
+                yield self.log("AGENTE", "⚠️ Nessun dato utile trovato.", color="#facc15"), "Mi dispiace, non ho trovato informazioni ufficiali per rispondere a questa domanda."
+                break
+
+            # --- GENERAZIONE ---
+            yield self.log("GENERATOR", "Creazione risposta basata sul contesto...", color="#2dd4bf"), "⏳ *Validazione risposta...*"
+            final_result = self.generator.generate(clean_query, context)
+            print("Bozza:" + "="*50 + f"\n{final_result}\n" + "="*50 + "\n")
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                
+            # --- GIUDICE (Evaluation & Loop) ---
+            for rewrite_iter in range(3):
+                evaluation = self.judge.evaluate(
+                    clean_query, 
+                    context, 
+                    final_result.answer, 
+                    current_iter=rewrite_iter + 1, 
+                    max_iter=3
+                )
+
+                eval_color = "#22c55e" if evaluation.decision == "PASS" else "#ef4444"
+                yield self.log("GIUDICE", f"⚖️ <b>Decisione: {evaluation.decision}</b><br>{evaluation.reasoning}", color=eval_color), "⏳ *Revisione...*"
+                
+
+                if evaluation.decision == "PASS":
+                    is_resolved = True; break
+                elif evaluation.decision == "REWRITE":
+                    final_result = self.generator.revise(clean_query, context, evaluation.reasoning)
+                    print("Bozza:" + "="*50 + f"\n{final_result}\n" + "="*50 + "\n")
+                else:
+                    # SEARCH_AGAIN: feedback al planner e ricomincia loop globale
+                    feedback_for_search = evaluation.reasoning; 
+                    self.session_state.clear()
+                    break
+
+        # 5. FINALIZZAZIONE & LINK INJECTION
+        if final_result:
+            final_text = final_result.answer
+            source_mapping = self.session_state.source_mapping
+            
+            # Post-Processing: Iniezione Link citati nel testo 
+            links_found = []
+            if is_success and hasattr(final_result, 'sources_used') and final_result.sources_used:
+                all_possible_links = []
+                for doc_id in set(final_result.sources_used):
+                    if doc_id in source_mapping:
+                        all_possible_links.extend(source_mapping[doc_id].get('external_links', []))
+                
+                # Filtro anchor brevi o stop words
+                stop_words = {"clicca", "qui", "link", "scarica", "download", "home", "sito", "pdf"}
+                valid_links = []
+                for link in all_possible_links:
+                    anchor = link['text'].strip()
+                    if len(anchor) > 4 and anchor.lower() not in stop_words:
+                        if not any(v['url'] == link['url'] for v in valid_links):
+                            valid_links.append(link)
+                
+                valid_links.sort(key=lambda x: len(x['text']), reverse=True)
+                
+                link_counter = 1
+                for link in valid_links:
+                    anchor = link['text']
+                    pattern = re.compile(re.escape(anchor), re.IGNORECASE)
+                    if pattern.search(final_text):
+                        final_text = pattern.sub(f"**{anchor}** [{link_counter}]", final_text, count=1)
+                        links_found.append((link_counter, anchor, link['url']))
+                        link_counter += 1
+
+            # Costruzione Lista Fonti per UI
+            testo_ui = final_text + "\n\n"
+            if is_success and hasattr(final_result, 'sources_used') and final_result.sources_used:
+                testo_ui += "### 📚 Fonti Utilizzate\n"
+                for doc_id in sorted(set(final_result.sources_used)):
+                    if doc_id in source_mapping:
+                        dati = source_mapping[doc_id]
+                        smart_url = dati.get('smart_url', dati['url'])
+                        testo_ui += f"- [Doc {doc_id}] **[{dati['titolo'][:65]}]({smart_url})**\n"
+                
+                if links_found:
+                    testo_ui += "\n### 🔗 Link di approfondimento\n"
+                    for idx, anchor, url in links_found:
+                        testo_ui += f"- [{idx}] [{anchor}]({url})\n"
+
+            append_history_turn(HISTORY_FILE, user=raw_query, final_query=clean_query, assistant=final_result.answer)
+            yield self.log("SISTEMA", "Elaborazione completata con successo.", color="#22c55e"), testo_ui
+
+# Istanza per Gradio
+agent_system = AgenticRag()
+
+# ==========================================
+# 4. INTERFACCIA GRADIO 
+# ==========================================
+pro_dark_theme = gr.themes.Soft(primary_hue="orange", neutral_hue="slate").set(
+    body_background_fill="#0f172a", block_background_fill="#1e293b",
+    block_border_width="1px", block_border_color="#334155", input_background_fill="#0f172a"
+)
+
+minimal_css = """
+#log_panel { height: 550px !important; overflow-y: auto !important; padding: 15px; background: #1e293b; border-radius: 8px; border: 1px solid #334155; }
+.gradio-container { max-width: 100% !important; padding: 0 20px !important; }
+"""
+
+logo_path = os.path.join(PROJECT_ROOT, "logo_ChatBot_DIEM_Gruop5.png")
+
+with gr.Blocks(fill_width=True, css=minimal_css) as demo:
+    with gr.Row():
+        with gr.Column(scale=1, min_width=80):
+            if os.path.exists(logo_path): gr.Image(logo_path, show_label=False, width=80, container=False)
+            else: gr.Markdown("# 🤖")
+        with gr.Column(scale=11):
+            gr.Markdown("## DIEM Agentic Helper\n*Università degli Studi di Salerno - A.A. 2025/2026*")
+
+    gr.Markdown("---")
+
+    with gr.Row():
+        with gr.Column(scale=7):
+            chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None))
+            with gr.Row():
+                # Definiamo i componenti
+                msg = gr.Textbox(placeholder="Fai una domanda...", container=False, scale=5, autofocus=True)
+                submit_btn = gr.Button("Invia", variant="primary", scale=1)
+            clear_btn = gr.Button("🗑️ Svuota Chat", variant="stop", size="sm")
+
+        with gr.Column(scale=3):
+            gr.Markdown("### 🧠 Agentic Reasoning Logs")
+            log_display = gr.HTML(value="<div style='color:#64748b; font-style: italic;'>In attesa di input...</div>", elem_id="log_panel")
+
+    # --- LOGICA DI BLOCCO/SBLOCCO ---
+    
+    def user_action(user_message, history):
+        if not user_message.strip(): return gr.update(), history, gr.update(), gr.update()
+        history = history or []
+        history.append({"role": "user", "content": user_message})
+        return gr.update(value="", interactive=False), history, gr.update(interactive=False), gr.update(interactive=False)
+
+    def bot_action(history):
+        if not history or history[-1]["role"] != "user": 
+            yield history, gr.update(); return
+        
+        # --- FIX ESTRAZIONE QUERY ---
+        raw_content = history[-1]["content"]
+        user_query = user_query = raw_content if isinstance(raw_content, str) else " ".join([p["text"] for p in raw_content if "text" in p])
+
+        if isinstance(raw_content, str):
+            user_query = raw_content
+        elif isinstance(raw_content, list):
+            parts = []
+            for item in raw_content:
+                if isinstance(item, dict) and "text" in item:
+                    parts.append(item["text"])
+                elif isinstance(item, str):
+                    parts.append(item)
+            user_query = " ".join(parts)
+        else:
+            user_query = str(raw_content)
+        
+        start_time = time.time()
+        history.append({"role": "assistant", "content": "..."})
+        
+        last_log = ""
+        for log_html, partial_answer in agent_system.run(user_query):
+            history[-1]["content"] = partial_answer
+            last_log = log_html
+            yield history, log_html
+
+        total_time = time.time() - start_time
+        mins, secs = divmod(int(total_time), 60)
+        history[-1]["content"] += f"\n\n---\n*⏱️ Tempo di elaborazione: {mins}m {secs}s*"
+        yield history, last_log
+
+    def reenable(): 
+        return gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True)
+
+    def clear_session():
+        agent_system.logs = []
+        try:
+            if os.path.exists(HISTORY_FILE):
+                with open(HISTORY_FILE, 'w'): pass
+                print(" ✅ History fisica svuotata.")
+        except Exception as e: print(f"Errore clear: {e}")
+        return [], "<div style='color:#64748b;'>Sessione riavviata.</div>"
+
+    # --- EVENTS ---
+    for trigger in [submit_btn.click, msg.submit]:
+        trigger(user_action, [msg, chatbot], [msg, chatbot, submit_btn, clear_btn], queue=False)\
+            .then(bot_action, [chatbot], [chatbot, log_display])\
+            .then(reenable, None, [msg, submit_btn, clear_btn])
+
+    clear_btn.click(lambda: (gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)), None, [msg, submit_btn, clear_btn])\
+             .then(clear_session, None, [chatbot, log_display])\
+             .then(lambda: (gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True)), None, [msg, submit_btn, clear_btn])
+
+if __name__ == "__main__":
+    demo.launch(theme=pro_dark_theme, css=minimal_css)

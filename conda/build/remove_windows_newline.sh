@@ -1,0 +1,1 @@
+sed -i 's/\r$//' ./conda/build/build.sh

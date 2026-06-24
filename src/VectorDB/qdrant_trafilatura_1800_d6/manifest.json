@@ -1,0 +1,12 @@
+{
+  "collection_name": "diem_chunks",
+  "qdrant_path": "qdrant",
+  "dense_model": "intfloat/multilingual-e5-large",
+  "sparse_model": "Qdrant/bm25",
+  "dense_vector_name": "dense",
+  "context_vector_name": "context_dense",
+  "sparse_vector_name": "sparse",
+  "vector_size": 1024,
+  "chunks": 64959,
+  "semantic_chunks": "semantic_trafilatura_1800_d6\\semantic_chunks.jsonl"
+}
