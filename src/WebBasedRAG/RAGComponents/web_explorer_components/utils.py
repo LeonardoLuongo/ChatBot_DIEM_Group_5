@@ -102,7 +102,8 @@ class DocumentChunker:
         # 1. CHILD SPLITTER: Genera i vettori ultra-precisi (Small)
         self.child_chunker = LateChunker(
             embedding_model="nomic-ai/nomic-embed-text-v1.5", 
-            chunk_size=128, 
+            chunk_size=128,
+            trust_remote_code=True,
             min_characters_per_chunk=50
         )
         

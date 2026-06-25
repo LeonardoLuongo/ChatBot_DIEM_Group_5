@@ -11,13 +11,50 @@ from pathlib import Path
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 import os 
+import torch
+import numpy as np
+from sentence_transformers import SentenceTransformer, util
+
+class JinaEmbeddingsWrapper:
+    def __init__(self):
+        print("-- Caricamento Jina Embeddings per Web Search...")
+        self.model = SentenceTransformer(
+            "jinaai/jina-embeddings-v3", 
+            trust_remote_code=True,
+            model_kwargs={"torch_dtype": torch.bfloat16}
+        )
+
+    def encode(self, texts, **kwargs):
+        return self.model.encode(texts, **kwargs)
+
+    def compute_similarity(self, query_embedding, corpus_embeddings):
+        # Assicura che la query sia un tensore
+        if not isinstance(query_embedding, torch.Tensor):
+            query_embedding = torch.tensor(query_embedding)
+            
+        # Ottimizzazione: converte la lista in un array NumPy PRIMA del tensore
+        # (Questo elimina il warning rosso di PyTorch)
+        if isinstance(corpus_embeddings, list):
+            corpus_embeddings = torch.tensor(np.array(corpus_embeddings))
+        elif not isinstance(corpus_embeddings, torch.Tensor):
+            corpus_embeddings = torch.tensor(corpus_embeddings)
+            
+        # Usa la funzione nativa del pacchetto per calcolare la distanza coseno
+        return util.cos_sim(query_embedding, corpus_embeddings)
 
 # ==========================================
 # 1. SETUP PATHS
 # ==========================================
 CURRENT_DIR = Path(os.getcwd())
 SRC_PATH = Path(__file__).resolve().parent.parent
-QDRANTDB_PATH = SRC_PATH / "VectorDB" / "qdrant_trafilatura_1800_d6"
+
+from dotenv import load_dotenv
+
+# SRC_PATH punta a "src", quindi suo "padre" è la cartella principale del progetto
+env_path = SRC_PATH.parent / ".env"
+load_dotenv(dotenv_path=env_path)
+
+#QDRANTDB_PATH = SRC_PATH / "VectorDB" / "qdrant_trafilatura_1800_d6"
 SESSION_DIR = SRC_PATH / "session"
 if str(SRC_PATH) not in sys.path:
     sys.path.insert(0, str(SRC_PATH))
@@ -101,17 +138,20 @@ class AgenticRag:
         self.gen_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0) 
         
         
-        self.embeddings_model = NomicEmbeddings()
+        #self.embeddings_model = NomicEmbeddings()
+        print("-- Caricamento Jina Embeddings...")
+        self.embeddings_model = JinaEmbeddingsWrapper()
         self.reranker = BGE8KReranker()
         self.evaluator = RelevanceEvaluator(self.reranker)
         
         # Percorso DB Qdrant
-        self.qdrant_store_dir = QDRANTDB_PATH
+        #self.qdrant_store_dir = QDRANTDB_PATH
         try:
-            self.qdrant_service = QdrantService(store_dir_path=str(self.qdrant_store_dir))
-            print(" ✅ Qdrant Vector DB connesso.")
+            # Assicurati che QdrantService accetti url e collection_name al posto di store_dir_path
+            self.qdrant_service = QdrantService(url="http://localhost:6333", collection_name="diem_chunks")
+            print(" ✅ Qdrant Vector DB su Docker connesso.")
         except Exception as e:
-            print(f" ⚠️ [QDRANT WARN] Impossibile avviare il Vector DB: {e}")
+            print(f" ⚠️ [QDRANT WARN] Impossibile avviare il Vector DB su Docker: {e}")
             self.qdrant_service = None
 
         self.session_state = GlobalSessionState()
@@ -166,6 +206,7 @@ class AgenticRag:
             
         except Exception as e: 
             print(f"Errore inizializzazione sistema: {e}")
+            raise e
 
     def log(self, module, msg, color="#fb923c"):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -191,7 +232,7 @@ class AgenticRag:
         history = load_history(HISTORY_FILE)
         yield self.log("MEMORIA", f"Cronologia caricata: {len(history)} turni.", color="#a855f7"), "⏳ *Analisi contesto...*"
         
-        rewrite_result = rewrite_with_history(query=raw_query, history=history, model="ministral-3:8b", temperature=0.0)
+        rewrite_result = rewrite_with_history(query=raw_query, history=history, temperature=0.0)
         clean_query = rewrite_result.final_query
         
         history_log = f"Query contestualizzata: <b>'{clean_query}'</b>" if rewrite_result.uses_history else "Query considerata autonoma."

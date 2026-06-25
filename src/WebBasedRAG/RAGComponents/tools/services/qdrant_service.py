@@ -10,10 +10,10 @@ from typing import Any, List
 import numpy as np
 from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
-
+import torch
 
 COLLECTION_NAME = "diem_chunks"
-DEFAULT_DENSE_MODEL = "intfloat/multilingual-e5-large"
+DEFAULT_DENSE_MODEL = "jinaai/jina-embeddings-v3"
 DEFAULT_SPARSE_MODEL = "Qdrant/bm25"
 DENSE_VECTOR_NAME = "dense"
 CONTEXT_VECTOR_NAME = "context_dense"
@@ -32,14 +32,20 @@ class SearchResult:
     page_context: str = ""
 
 
-class E5Embedder:
+class JinaEmbedder:
     def __init__(self, model_name: str = DEFAULT_DENSE_MODEL, device: str = None) -> None:
-        print(f"   -> Caricamento E5 Embedder ({model_name}) per Qdrant DB...")
-        self.model = SentenceTransformer(model_name, device=device)
+        print(f"   -> Caricamento Jina Embedder ({model_name}) per Qdrant DB...")
+        self.model = SentenceTransformer(
+            model_name, 
+            device=device,
+            trust_remote_code=True,
+            model_kwargs={"torch_dtype": torch.bfloat16} # Efficienza VRAM
+        )
 
     def embed_query(self, query: str) -> np.ndarray:
+        # Nessun prefisso "query:" richiesto per Jina
         vector = self.model.encode(
-            [f"query: {query}"],
+            [query],
             batch_size=1,
             normalize_embeddings=True,
             show_progress_bar=False,
@@ -146,26 +152,20 @@ def build_category_filter(categories: list[str]) -> models.Filter | None:
 
 
 class QdrantService:
-    def __init__(self, store_dir_path: str, device: str = None):
-        store_dir = Path(store_dir_path)
-        manifest_path = store_dir / "manifest.json"
+    def __init__(self, url: str = "http://localhost:6333", collection_name: str = COLLECTION_NAME, device: str = None):
+        # Non ci serve più leggere il manifest locale, sappiamo già come è fatto il DB
+        self.collection_name = collection_name
+        self.dense_vector_name = DENSE_VECTOR_NAME
+        self.context_vector_name = CONTEXT_VECTOR_NAME
+        self.question_vector_name = QUESTION_VECTOR_NAME
+        self.sparse_vector_name = SPARSE_VECTOR_NAME
+        self.sparse_model = DEFAULT_SPARSE_MODEL
 
-        if not manifest_path.exists():
-            raise FileNotFoundError(f"Manifest non trovato in: {manifest_path}")
+        print(f"   -> Connessione a Qdrant Docker DB: {url}")
+        self.client = QdrantClient(url=url)
 
-        self.manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        self.collection_name = self.manifest["collection_name"]
-        self.dense_vector_name = self.manifest.get("dense_vector_name", DENSE_VECTOR_NAME)
-        self.context_vector_name = self.manifest.get("context_vector_name", CONTEXT_VECTOR_NAME)
-        self.question_vector_name = self.manifest.get("question_vector_name")
-        self.sparse_vector_name = self.manifest.get("sparse_vector_name", SPARSE_VECTOR_NAME)
-        self.sparse_model = self.manifest.get("sparse_model", DEFAULT_SPARSE_MODEL)
-
-        qdrant_db_path = str(store_dir / self.manifest["qdrant_path"])
-        print(f"   -> Connessione a Qdrant Local DB: {qdrant_db_path}")
-        self.client = QdrantClient(path=qdrant_db_path)
-
-        self.embedder = E5Embedder(self.manifest["dense_model"], device=device)
+        # Usiamo il nuovo JinaEmbedder
+        self.embedder = JinaEmbedder(DEFAULT_DENSE_MODEL, device=device)
 
     def search(self, query: str, limit: int = 5) -> List[SearchResult]:
         boost_keyword = detect_keyword_query(query)
