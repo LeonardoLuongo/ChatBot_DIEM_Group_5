@@ -102,6 +102,7 @@ from WebBasedRAG.RAGComponents.web_explorer_components.search import (
 )
 
 # Tools
+from WebBasedRAG.RAGComponents.context_assessor import ContextAssessor
 from WebBasedRAG.RAGComponents.tools.core.registry import ToolRegistry
 from WebBasedRAG.RAGComponents.tools.services.easycourse_service import EasyCourseService
 from WebBasedRAG.RAGComponents.tools.services.professors_service import ProfessorsService
@@ -130,12 +131,12 @@ class AgenticRag:
         # Assicurati di avere la variabile d'ambiente GOOGLE_API_KEY impostata.
         
         # Consiglio flash per ruoli veloci/economici e pro per la generazione finale complessa
-        self.explorer_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0)
-        self.agent_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0) 
-        self.judge_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.3)
+        self.explorer_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0)
+        self.agent_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0, max_retries=3) 
+        self.judge_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.3)
         
         # Per il generatore finale potresti voler usare il modello 'pro' se serve più ragionamento
-        self.gen_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0) 
+        self.gen_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0) 
         
         
         #self.embeddings_model = NomicEmbeddings()
@@ -203,7 +204,8 @@ class AgenticRag:
             self.judge = AnswerJudge(llm=self.judge_llm)
             self.planner = QueryPlanner(llm=self.judge_llm, tools=tools) 
             self.generator = AnswerGenerator(llm=self.gen_llm)
-            
+            self.assessor = ContextAssessor(llm=self.judge_llm)
+
         except Exception as e: 
             print(f"Errore inizializzazione sistema: {e}")
             raise e
@@ -220,35 +222,40 @@ class AgenticRag:
         gc.collect()
         if torch.cuda.is_available(): torch.cuda.empty_cache()
 
-        yield self.log("SISTEMA", f"Inizio elaborazione query: <i>'{raw_query}'</i>", color="#94a3b8"), "⏳ *Verifica sicurezza...*"
-        
-        # 1. GUARDRAILS (Input)
-        input_check = validate_input(raw_query, logger=self.guardrail_logger)
-        if not input_check.allowed:
-            yield self.log("GUARDRAILS", "🚫 Richiesta bloccata per violazione policy.", color="#ef4444"), refusal_message(input_check.reasons)
-            return 
+        # =========================================================
+        # GUSCIO DI SICUREZZA GLOBALE (Gestione Crash e Timeout API)
+        # =========================================================
+        try:
 
-        # 2. HISTORY & REWRITING
-        history = load_history(HISTORY_FILE)
-        yield self.log("MEMORIA", f"Cronologia caricata: {len(history)} turni.", color="#a855f7"), "⏳ *Analisi contesto...*"
-        
-        rewrite_result = rewrite_with_history(query=raw_query, history=history, temperature=0.0)
-        clean_query = rewrite_result.final_query
-        
-        history_log = f"Query contestualizzata: <b>'{clean_query}'</b>" if rewrite_result.uses_history else "Query considerata autonoma."
-        yield self.log("HISTORY", history_log, color="#3b82f6"), "⏳ *Routing query...*"
-
-        # 3. INTENT ROUTING (Gateway)
-        decision = self.router.route(clean_query)
-        yield self.log("ROUTER", f"🧭 <b>Intento:</b> {decision.intent}<br><i>{decision.reasoning}</i>", color="#8b5cf6"), "⏳ *Pianificazione...*"
-
-        if decision.intent == "DIRECT_CHAT":
-            yield self.log("SISTEMA", "Generazione risposta diretta (No RAG).", color="#2dd4bf"), "⏳ *Generazione...*"
-            # 1. Recupera lo storico effettivo della conversazione
-            context = self.session_state.get_all_context()
+            yield self.log("SISTEMA", f"Inizio elaborazione query: <i>'{raw_query}'</i>", color="#94a3b8"), "⏳ *Verifica sicurezza...*"
             
-            # 2. Costruisci un prompt dinamico che include il ragionamento del router
-            system_prompt = f"""You are the final conversational agent. The user's input has been routed to you 
+            # 1. GUARDRAILS (Input)
+            input_check = validate_input(raw_query, logger=self.guardrail_logger)
+            if not input_check.allowed:
+                yield self.log("GUARDRAILS", "🚫 Richiesta bloccata per violazione policy.", color="#ef4444"), refusal_message(input_check.reasons)
+                return 
+
+            # 2. HISTORY & REWRITING
+            history = load_history(HISTORY_FILE)
+            yield self.log("MEMORIA", f"Cronologia caricata: {len(history)} turni.", color="#a855f7"), "⏳ *Analisi contesto...*"
+            
+            rewrite_result = rewrite_with_history(query=raw_query, history=history, temperature=0.0)
+            clean_query = rewrite_result.final_query
+            
+            history_log = f"Query contestualizzata: <b>'{clean_query}'</b>" if rewrite_result.uses_history else "Query considerata autonoma."
+            yield self.log("HISTORY", history_log, color="#3b82f6"), "⏳ *Routing query...*"
+
+            # 3. INTENT ROUTING (Gateway)
+            decision = self.router.route(clean_query)
+            yield self.log("ROUTER", f"🧭 <b>Intento:</b> {decision.intent}<br><i>{decision.reasoning}</i>", color="#8b5cf6"), "⏳ *Pianificazione...*"
+
+            if decision.intent == "DIRECT_CHAT":
+                yield self.log("SISTEMA", "Generazione risposta diretta (No RAG).", color="#2dd4bf"), "⏳ *Generazione...*"
+                # 1. Recupera lo storico effettivo della conversazione
+                context = self.session_state.get_all_context()
+                
+                # 2. Costruisci un prompt dinamico che include il ragionamento del router
+                system_prompt = f"""You are the final conversational agent. The user's input has been routed to you 
 without querying the database or external tools for the following reason:
 '{decision.reasoning}'
 
@@ -259,120 +266,180 @@ INSTRUCTIONS:
 - Use the routing reason as internal context to understand how to handle the user (e.g., if the question is adversarial/misleading, handle it diplomatically; if it is small talk, be polite).
 - DO NOT repeat the routing reason to the user; use it only to calibrate your tone and response.
 - If the user asks follow-up questions (e.g., "are you sure?"), use the conversation history to understand the context of their query."""
-            
-            # 3. Passa il prompt dinamico al generatore
-            response = self.generator.generate(clean_query, system_prompt)
-            
-            append_history_turn(HISTORY_FILE, user=raw_query, final_query=clean_query, assistant=response.answer)
-            yield self.log("SISTEMA", "Completato.", color="#22c55e"), response.answer
-            return
-
-        # 4. LOOP AGENTICO RAG
-        feedback_for_search = ""; is_resolved = False; context = ""; is_success = False; final_result = None
-
-        for global_iter in range(3):
-            if is_resolved: break
-            
-            # --- PIANIFICAZIONE ---
-            plan_obj = self.planner.generate_plan(clean_query, previous_feedback=feedback_for_search, current_iter=global_iter+1)
-            plan_log = f"🎯 <b>Strategia (Giro {global_iter+1}):</b> {plan_obj.reasoning}<br>"
-            for s in plan_obj.steps: plan_log += f"&nbsp;&nbsp;📍 Step {s.step_number} [{s.tool_name}]: {s.tool_intent}<br>"
-            yield self.log("PLANNER", plan_log, color="#60a5fa"), "⏳ *Esecuzione Agent...*"
-            
-            # --- AGENTE (Tool Execution) ---
-            yield self.log("AGENTE", "🤖 Analisi documenti e utilizzo tool...", color="#fb923c"), "⏳ *Recupero dati in corso...*"
-            plan_text = "\n".join([f"Step {s.step_number}: use {s.tool_name} - {s.tool_intent}" for s in plan_obj.steps])
-            
-            current_context, found_something = self.agent.run(user_query=clean_query, plan=plan_text, previous_feedback=feedback_for_search)
-            context = current_context; is_success = found_something
-            print("Context:" + "="*50 + f"\n{context}\n" + "="*50 + "\n")
-            if not found_something:
-                yield self.log("AGENTE", "⚠️ Nessun dato utile trovato.", color="#facc15"), "Mi dispiace, non ho trovato informazioni ufficiali per rispondere a questa domanda."
-                break
-
-            # --- GENERAZIONE ---
-            yield self.log("GENERATOR", "Creazione risposta basata sul contesto...", color="#2dd4bf"), "⏳ *Validazione risposta...*"
-            final_result = self.generator.generate(clean_query, context)
-            print("Bozza:" + "="*50 + f"\n{final_result}\n" + "="*50 + "\n")
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
                 
-            # --- GIUDICE (Evaluation & Loop) ---
-            for rewrite_iter in range(3):
-                evaluation = self.judge.evaluate(
-                    clean_query, 
-                    context, 
-                    final_result.answer, 
-                    current_iter=rewrite_iter + 1, 
-                    max_iter=3
-                )
-
-                eval_color = "#22c55e" if evaluation.decision == "PASS" else "#ef4444"
-                yield self.log("GIUDICE", f"⚖️ <b>Decisione: {evaluation.decision}</b><br>{evaluation.reasoning}", color=eval_color), "⏳ *Revisione...*"
+                # 3. Passa il prompt dinamico al generatore
+                response = self.generator.generate(clean_query, system_prompt)
                 
+                append_history_turn(HISTORY_FILE, user=raw_query, final_query=clean_query, assistant=response.answer)
+                yield self.log("SISTEMA", "Completato.", color="#22c55e"), response.answer
+                return
 
-                if evaluation.decision == "PASS":
-                    is_resolved = True; break
-                elif evaluation.decision == "REWRITE":
-                    final_result = self.generator.revise(clean_query, context, evaluation.reasoning)
-                    print("Bozza:" + "="*50 + f"\n{final_result}\n" + "="*50 + "\n")
+            # ---------------------------------------------------------
+            # NUOVO BLOCCO: 4. ACTIVE CONTEXT PRUNING (Il Mietitore)
+            # ---------------------------------------------------------
+            pruned_count = self.session_state.prune_context(clean_query, self.evaluator, threshold=0.20)
+            if pruned_count > 0:
+                yield self.log("MEMORIA", f"🧹 Potatura: eliminati {pruned_count} documenti obsoleti.", color="#fb923c"), "⏳ *Valutazione cache...*"
+
+            feedback_for_search = ""
+            is_resolved = False
+            context = self.session_state.get_all_context()
+            is_success = False
+            final_result = None
+
+            # ---------------------------------------------------------
+            # NUOVO BLOCCO: 5. PRE-RETRIEVAL ASSESSMENT (Il Casello)
+            # ---------------------------------------------------------
+            if context.strip():
+                yield self.log("CASELLO", "Valutazione sufficienza del contesto in memoria...", color="#eab308"), "⏳ *Analisi cache...*"
+                assessment = self.assessor.evaluate_sufficiency(clean_query, context)
+                
+                if assessment.is_sufficient:
+                    yield self.log("CASELLO", f"⚡ CACHE HIT! Contesto già sufficiente per rispondere.<br><i>{assessment.reasoning}</i>", color="#22c55e"), "⏳ *Generazione risposta...*"
+                    is_success = True
+                    is_resolved = True # Questo salterà il Loop Agentico!
+                    final_result = self.generator.generate(clean_query, context)
                 else:
-                    # SEARCH_AGAIN: feedback al planner e ricomincia loop globale
-                    feedback_for_search = evaluation.reasoning; 
-                    self.session_state.clear()
+                    yield self.log("CASELLO", f"🔍 Dati in cache parziali. Procedo con la ricerca.<br><i>{assessment.reasoning}</i>", color="#facc15"), "⏳ *Pianificazione...*"
+                    # Passiamo al planner l'indizio su cosa manca!
+                    feedback_for_search = f"We have some existing context, but it's incomplete: {assessment.reasoning}. Focus your plan on finding the missing information."
+
+            # ---------------------------------------------------------
+            # 6. LOOP AGENTICO RAG (Eseguito SOLO se is_resolved è False)
+            # ---------------------------------------------------------
+
+            feedback_for_search = ""; is_resolved = False; context = ""; is_success = False; final_result = None
+
+            for global_iter in range(3):
+                if is_resolved: break
+                
+                # --- PIANIFICAZIONE ---
+                # Passiamo 'context' al planner
+                plan_obj = self.planner.generate_plan(clean_query, context, previous_feedback=feedback_for_search, current_iter=global_iter+1)
+                
+                plan_log = f"🎯 <b>Strategia (Giro {global_iter+1}):</b> {plan_obj.reasoning}<br>"
+                for s in plan_obj.steps: plan_log += f"&nbsp;&nbsp;📍 Step {s.step_number} [{s.tool_name}]: {s.tool_intent}<br>"
+                yield self.log("PLANNER", plan_log, color="#60a5fa"), "⏳ *Esecuzione Agent...*"
+                
+                # --- AGENTE (Tool Execution) ---
+                yield self.log("AGENTE", "🤖 Analisi documenti e utilizzo tool...", color="#fb923c"), "⏳ *Recupero dati in corso...*"
+                plan_text = "\n".join([f"Step {s.step_number}: use {s.tool_name} - {s.tool_intent}" for s in plan_obj.steps])
+                
+                # Passiamo 'context' all'agente
+                current_context, found_something = self.agent.run(user_query=clean_query, context=context, plan=plan_text, previous_feedback=feedback_for_search)
+                
+                context = current_context; is_success = found_something
+                print("Context:" + "="*50 + f"\n{context}\n" + "="*50 + "\n")
+                if not found_something:
+                    yield self.log("AGENTE", "⚠️ Nessun dato utile trovato.", color="#facc15"), "Mi dispiace, non ho trovato informazioni ufficiali per rispondere a questa domanda."
                     break
 
-        # 5. FINALIZZAZIONE & LINK INJECTION
-        if final_result:
-            final_text = final_result.answer
-            source_mapping = self.session_state.source_mapping
+                # --- GENERAZIONE ---
+                yield self.log("GENERATOR", "Creazione risposta basata sul contesto...", color="#2dd4bf"), "⏳ *Validazione risposta...*"
+                final_result = self.generator.generate(clean_query, context)
+                print("Bozza:" + "="*50 + f"\n{final_result}\n" + "="*50 + "\n")
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    
+                # --- GIUDICE (Evaluation & Loop) ---
+                for rewrite_iter in range(3):
+                    evaluation = self.judge.evaluate(
+                        clean_query, 
+                        context, 
+                        final_result.answer, 
+                        current_iter=rewrite_iter + 1, 
+                        max_iter=3
+                    )
+
+                    eval_color = "#22c55e" if evaluation.decision == "PASS" else "#ef4444"
+                    yield self.log("GIUDICE", f"⚖️ <b>Decisione: {evaluation.decision}</b><br>{evaluation.reasoning}", color=eval_color), "⏳ *Revisione...*"
+                    
+
+                    if evaluation.decision == "PASS":
+                        is_resolved = True; break
+                    elif evaluation.decision == "AMBIGUOUS":
+                            print(f"   [GIUDICE] AMBIGUOUS. Necessario chiarimento utente. ({evaluation.reasoning})")
+                            # Chiamiamo il metodo speciale per fare la domanda all'utente
+                            final_result = self.generator.ask_clarification(clean_query, context, evaluation.reasoning)
+                            is_resolved = True # Dichiariamo risolto il loop interno, restituiamo la palla all'utente!
+                            break
+                    elif evaluation.decision == "REWRITE":
+                        final_result = self.generator.revise(clean_query, context, evaluation.reasoning)
+                        print("Bozza:" + "="*50 + f"\n{final_result}\n" + "="*50 + "\n")
+                    else:
+                        # SEARCH_AGAIN: feedback al planner e ricomincia loop globale
+                        feedback_for_search = evaluation.reasoning; 
+                        self.session_state.clear()
+                        break
+
+            # 5. FINALIZZAZIONE & LINK INJECTION
+            if final_result:
+                final_text = final_result.answer
+                source_mapping = self.session_state.source_mapping
+                
+                # Post-Processing: Iniezione Link citati nel testo 
+                links_found = []
+                if is_success and hasattr(final_result, 'sources_used') and final_result.sources_used:
+                    all_possible_links = []
+                    for doc_id in set(final_result.sources_used):
+                        if doc_id in source_mapping:
+                            all_possible_links.extend(source_mapping[doc_id].get('external_links', []))
+                    
+                    # Filtro anchor brevi o stop words
+                    stop_words = {"clicca", "qui", "link", "scarica", "download", "home", "sito", "pdf"}
+                    valid_links = []
+                    for link in all_possible_links:
+                        anchor = link['text'].strip()
+                        if len(anchor) > 4 and anchor.lower() not in stop_words:
+                            if not any(v['url'] == link['url'] for v in valid_links):
+                                valid_links.append(link)
+                    
+                    valid_links.sort(key=lambda x: len(x['text']), reverse=True)
+                    
+                    link_counter = 1
+                    for link in valid_links:
+                        anchor = link['text']
+                        pattern = re.compile(re.escape(anchor), re.IGNORECASE)
+                        if pattern.search(final_text):
+                            final_text = pattern.sub(f"**{anchor}** [{link_counter}]", final_text, count=1)
+                            links_found.append((link_counter, anchor, link['url']))
+                            link_counter += 1
+
+                # Costruzione Lista Fonti per UI
+                testo_ui = final_text + "\n\n"
+                if is_success and hasattr(final_result, 'sources_used') and final_result.sources_used:
+                    testo_ui += "### 📚 Fonti Utilizzate\n"
+                    for doc_id in sorted(set(final_result.sources_used)):
+                        if doc_id in source_mapping:
+                            dati = source_mapping[doc_id]
+                            smart_url = dati.get('smart_url', dati['url'])
+                            testo_ui += f"- [Doc {doc_id}] **[{dati['titolo'][:65]}]({smart_url})**\n"
+                    
+                    if links_found:
+                        testo_ui += "\n### 🔗 Link di approfondimento\n"
+                        for idx, anchor, url in links_found:
+                            testo_ui += f"- [{idx}] [{anchor}]({url})\n"
+
+                append_history_turn(HISTORY_FILE, user=raw_query, final_query=clean_query, assistant=final_result.answer)
+                yield self.log("SISTEMA", "Elaborazione completata con successo.", color="#22c55e"), testo_ui
+                
+        # =========================================================
+        # GESTIONE ECCEZIONI: Cattura l'errore 503 o qualsiasi altro crash
+        # =========================================================
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"\n🚨 [CRASH PREVENUTO] Errore critico nel metodo run:\n{error_details}")
             
-            # Post-Processing: Iniezione Link citati nel testo 
-            links_found = []
-            if is_success and hasattr(final_result, 'sources_used') and final_result.sources_used:
-                all_possible_links = []
-                for doc_id in set(final_result.sources_used):
-                    if doc_id in source_mapping:
-                        all_possible_links.extend(source_mapping[doc_id].get('external_links', []))
-                
-                # Filtro anchor brevi o stop words
-                stop_words = {"clicca", "qui", "link", "scarica", "download", "home", "sito", "pdf"}
-                valid_links = []
-                for link in all_possible_links:
-                    anchor = link['text'].strip()
-                    if len(anchor) > 4 and anchor.lower() not in stop_words:
-                        if not any(v['url'] == link['url'] for v in valid_links):
-                            valid_links.append(link)
-                
-                valid_links.sort(key=lambda x: len(x['text']), reverse=True)
-                
-                link_counter = 1
-                for link in valid_links:
-                    anchor = link['text']
-                    pattern = re.compile(re.escape(anchor), re.IGNORECASE)
-                    if pattern.search(final_text):
-                        final_text = pattern.sub(f"**{anchor}** [{link_counter}]", final_text, count=1)
-                        links_found.append((link_counter, anchor, link['url']))
-                        link_counter += 1
+            error_msg = str(e).lower()
+            if "503" in error_msg or "unavailable" in error_msg or "429" in error_msg:
+                # Errore API Google
+                yield self.log("SERVER OVERLOAD", "I server di Google sono momentaneamente congestionati.", color="#ef4444"), "⚠️ **Server Sovraccarichi:** Il modello AI sta registrando un picco di richieste da parte degli utenti (Errore 503). Per favore, attendi qualche secondo e riprova."
+            else:
+                # Qualsiasi altro errore Python imprevisto
+                yield self.log("ERRORE CRITICO", f"Eccezione: {str(e)}", color="#ef4444"), "🚨 **Errore di sistema inaspettato.** Per favore, riprova o riformula la domanda."
 
-            # Costruzione Lista Fonti per UI
-            testo_ui = final_text + "\n\n"
-            if is_success and hasattr(final_result, 'sources_used') and final_result.sources_used:
-                testo_ui += "### 📚 Fonti Utilizzate\n"
-                for doc_id in sorted(set(final_result.sources_used)):
-                    if doc_id in source_mapping:
-                        dati = source_mapping[doc_id]
-                        smart_url = dati.get('smart_url', dati['url'])
-                        testo_ui += f"- [Doc {doc_id}] **[{dati['titolo'][:65]}]({smart_url})**\n"
-                
-                if links_found:
-                    testo_ui += "\n### 🔗 Link di approfondimento\n"
-                    for idx, anchor, url in links_found:
-                        testo_ui += f"- [{idx}] [{anchor}]({url})\n"
-
-            append_history_turn(HISTORY_FILE, user=raw_query, final_query=clean_query, assistant=final_result.answer)
-            yield self.log("SISTEMA", "Elaborazione completata con successo.", color="#22c55e"), testo_ui
 
 # Istanza per Gradio
 agent_system = AgenticRag()

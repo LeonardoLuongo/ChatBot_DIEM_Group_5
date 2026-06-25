@@ -55,6 +55,15 @@ You cannot plan a step if the agent won't have the required input arguments. Pay
 AVAILABLE TOOLS AND THEIR EXACT PYDANTIC SCHEMAS:
 {tools_schema}
 
+     
+AVAILABLE KNOWLEDGE IN MEMORY:
+{context}
+
+CRITICAL ANTI-HALLUCINATION RULE (THE "FETCH FIRST" DIRECTIVE):
+Look at the AVAILABLE KNOWLEDGE IN MEMORY. If the user asks to apply a rule, calculate a score, or process data, and the exact parameters/rules needed by your Tools are NOT present in the memory, your VERY FIRST STEP MUST be to use `SearchInternalDatabase` to find them. 
+NEVER assume you know the department's rules by default.
+
+
 CRITICAL TOOL ROUTING RULES (Memorize the difference between these tools):
 1. STUDENT TIMETABLES: If the user asks for STUDENT class timetables, lessons, or schedules based on a degree program, you MUST plan a step using `FetchStudentLessonsSchedule`. Do NOT use WebSearch.
 2. TEACHING SCHEDULES (LEZIONI): If the user asks for a specific TEACHER'S course list or their weekly teaching schedule (orario delle lezioni in aula), you MUST plan a step using `FetchTeacherLessonsSchedule`.
@@ -91,7 +100,7 @@ PREVIOUS AUDITOR FEEDBACK (if any, use it to improve the plan):
         
         self.chain = self.prompt | self.structured_planner
 
-    def generate_plan(self, query: str, previous_feedback: str = "", current_iter: int = 1, max_iter: int = 3) -> ExecutionPlan:
+    def generate_plan(self, query: str, context: str = "", previous_feedback: str = "", current_iter: int = 1, max_iter: int = 3) -> ExecutionPlan:
         print(f"   🗓️ [PLANNER] Analisi della query (Iterazione {current_iter}/{max_iter})...")
         callbacks = [langfuse_handler] if os.getenv("IS_LANGFUSE_ENABLED") else []
         
@@ -99,6 +108,7 @@ PREVIOUS AUDITOR FEEDBACK (if any, use it to improve the plan):
             return self.chain.invoke(
                 {
                     "query": query, 
+                    "context": context, # <--- INIETTA IL CONTESTO QUI
                     "feedback": previous_feedback, 
                     "tools_schema": self.tools_schema,
                     "current_iter": current_iter,  # <-- Inietto l'iterazione corrente

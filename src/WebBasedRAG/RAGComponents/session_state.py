@@ -7,6 +7,31 @@ class GlobalSessionState:
         self._doc_counter: int = 0
         self.max_docs = max_docs
 
+    def prune_context(self, query: str, evaluator, threshold: float = 0.20) -> int:
+        """
+        Active Context Pruning: Valuta i documenti in memoria rispetto alla nuova query 
+        e scarta quelli con score semantico inferiore alla soglia.
+        Restituisce il numero di documenti rimossi.
+        """
+        if not self.source_mapping:
+            return 0
+            
+        docs = list(self.source_mapping.items())
+        texts = [data["testo"] for _, data in docs]
+        
+        # Calcolo score in batch tramite il Cross-Encoder SOTA (Velocissimo)
+        scores = evaluator.calculate_rewards_batch(query, texts)
+        
+        keys_to_remove = []
+        for (doc_id, _), score in zip(docs, scores):
+            if score < threshold:
+                keys_to_remove.append(doc_id)
+                
+        for doc_id in keys_to_remove:
+            del self.source_mapping[doc_id]
+            
+        return len(keys_to_remove)
+
     def add_source(self, url: str, title: str, testo_estratto: str, smart_url: str = None, score: float = 1.0, external_links: list = None) -> int:
         self._doc_counter += 1
         doc_id = self._doc_counter

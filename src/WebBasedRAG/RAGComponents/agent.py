@@ -3,11 +3,8 @@ from typing import List
 from datetime import datetime
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_ollama.chat_models import ChatOllama
-# Importiamo le classi per l'Agent nativo di LangChain
 from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.language_models.chat_models import BaseChatModel
-
 
 import os
 if os.getenv("IS_LANGFUSE_ENABLED"):
@@ -33,7 +30,7 @@ class SupervisorAgent:
         _datetime = (
             f"- Day: {day_of_week}\n"
             f"- Date (YYYY-MM-DD): {now.strftime('%Y-%m-%d')}\n"
-            f"- Time: (HH:MM:SS){now.strftime('%H:%M:%S')}\n"
+            f"- Time (HH:MM:SS): {now.strftime('%H:%M:%S')}\n"
             f"- Current Year: {now.year}\n"
         )
         # 1. Definiamo il prompt per l'Agente
@@ -72,21 +69,25 @@ IMPORTANT RULES:
         )
 
 
-    def run(self, user_query: str, plan: str = "", previous_feedback: str = "") -> tuple[str, bool]:
+    def run(self, user_query: str, context: str = "", plan: str = "", previous_feedback: str = "") -> tuple[str, bool]:
         """Esegue i tool. Restituisce (testo_del_contesto, True/False se ha trovato qualcosa)."""
         print(" 🤖 [AGENTE] Avvio esecuzione del piano...")
         callbacks = [langfuse_handler] if os.getenv("IS_LANGFUSE_ENABLED") else []
-        
+        # Inseriamo il contesto nella memoria dell'Agente!
+        base_input = f"AVAILABLE KNOWLEDGE IN MEMORY:\n{context}\n\nUser Query: {user_query}\n\n"
         if previous_feedback:
             agent_input = (
-                f"Your previous context was rejected by the auditor. Reason: '{previous_feedback}'.\n"
-                f"Original user query: {user_query}\n\n"
-                f"Follow this REVISED Execution Plan step-by-step to fix the issue:\n{plan}"
+                f"{base_input}"
+                f"ATTENTION: Your previous context was rejected by the auditor.\n"
+                f"Reason for rejection: '{previous_feedback}'.\n\n"
+                f"Original User Query: {user_query}\n\n"
+                f"Revised Execution Plan (Follow this step-by-step to fix the issue):\n{plan}"
             )
         else:
             agent_input = (
-                f"User Request: {user_query}\n\n"
-                f"Execution Plan (execute these steps sequentially using your tools):\n{plan}"
+                f"{base_input}"
+                f"User Query: {user_query}\n\n"
+                f"Execution Plan (Execute these steps sequentially using your tools):\n{plan}"
             )
 
         # FASE 1: L'agente esegue i tool (che riempiono autonomamente il DB)

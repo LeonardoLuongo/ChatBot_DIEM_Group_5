@@ -20,6 +20,7 @@ class JudgeDecision(str, Enum):
     PASS = "PASS"
     REWRITE = "REWRITE"
     SEARCH_AGAIN = "SEARCH_AGAIN"
+    AMBIGUOUS = "AMBIGUOUS"
 
 
 class JudgeEvaluation(BaseModel):
@@ -73,7 +74,7 @@ DECISION RULES:
   d) The Context contains multiple valid alternatives for a broad query, but the Answer fails to ask the user to clarify, or asks for clarification in a generic/robotic way without using the available options.
   e) The Context is valid but the answer is not comlpete, do not contains all the data mentioned informations.
 - SEARCH_AGAIN: Trigger this if the Context DOES NOT contain the answer OR any useful alternatives to clarify the user's intent. Also trigger this if it fails the TEMPORAL RELEVANCE CHECK (info is too old). In your reasoning, you MUST suggest specific concepts the search agent should use, and explicitly instruct it to find more recent documents or add current years to its query.
-
+- AMBIGUOUS: Trigger this if the 'ORIGINAL QUESTION' is too broad, AND the 'AVAILABLE CONTEXT' explicitly contains multiple distinct valid categories/options (e.g., Bachelor vs Master, different curricula, multiple professors with the same surname). In your reasoning, you MUST list the exact options found.
 LENIENCY DIRECTIVE (CRITICAL - FOLLOW THIS STRICTLY):
 {leniency_rules}
 
