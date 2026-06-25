@@ -88,70 +88,82 @@ from dataclasses import dataclass
 from typing import Any
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_core.embeddings import Embeddings
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# 1. Piccolo wrapper necessario per far dialogare Jina con l'ecosistema LangChain
+# 1. Wrapper per Jina
 class JinaLangChainWrapper(Embeddings):
     def __init__(self, model):
         self.model = model
     def embed_documents(self, texts):
-        return self.model.encode(texts, task="retrieval.passage").tolist()
+        return self.model.encode(texts, task="retrieval.passage", batch_size=16).tolist()
     def embed_query(self, text):
-        return self.model.encode([text], task="retrieval.query")[0].tolist()
+        return self.model.encode([text], task="retrieval.query", batch_size=1)[0].tolist()
 
 class DocumentChunker:
     def __init__(self, embedding_model=None):
         self.embedding_model = embedding_model
-        print("Caricamento Chunker (Modalità: Semantic Chunking Ufficiale) in corso...")
+        print("Caricamento Chunker (Modalità: Two-Stage Recursive + Semantic)...")
+        
+        # STADIO 1: Il "Garante della Memoria". Assicura che nessun blocco superi i 4000 caratteri.
+        self.base_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=4000, 
+            chunk_overlap=400,
+            separators=["\n\n", "\n", ".", "?", "!", " ", ""]
+        )
         
         if self.embedding_model:
-            # Avvolgiamo Jina per renderlo compatibile con LangChain
             self.lc_embedder = JinaLangChainWrapper(self.embedding_model)
-            
-            # 2. Inizializziamo il Semantic Chunker Ufficiale!
-            # L'algoritmo "percentile" taglierà il testo creando un nuovo chunk SOLO 
-            # quando rileva un cambio di significato semantico marcato tra due frasi.
+            # STADIO 2: Il "Rifinitore Logico". Trova il senso compiuto dentro i blocchi di 4000 char.
             self.semantic_splitter = SemanticChunker(
                 self.lc_embedder, 
                 breakpoint_threshold_type="percentile" 
             )
         else:
-            # Fallback di sicurezza se l'embedding model non arriva
-            from langchain_text_splitters import RecursiveCharacterTextSplitter
-            self.semantic_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+            self.semantic_splitter = self.base_splitter
 
     def process_markdown(self, markdown_text: str, title: str = "", date_str: str = "") -> list:
         # Pulizia base
         markdown_text = re.sub(r'\n{3,}', '\n\n', markdown_text).strip()
         
-        # Header contestuale base (rimane utilissimo per far capire all'LLM la provenienza)
         header_date = f"Data di pubblicazione/riferimento: {date_str}\n" if date_str else ""
         header = f"Titolo Pagina/Documento: {title}\n{header_date}\n"
         
-        # 3. CREAZIONE CHUNK SEMANTICI
-        # La libreria si occuperà magicamente di raggruppare frasi coerenti tra loro
-        docs = self.semantic_splitter.create_documents([markdown_text])
-        
         all_expanded_chunks = []
+        text_chunks = []
         
-        # Prepariamo la lista di testi per l'embedding massivo (molto più veloce)
-        text_chunks = [f"{header}{doc.page_content.strip()}" for doc in docs]
+        # --- TWO-STAGE CHUNKING IN AZIONE ---
+        
+        # 1. Taglio strutturale sicuro
+        safe_blocks = self.base_splitter.split_text(markdown_text)
+        
+        # 2. Taglio semantico sui blocchi sicuri
+        for block in safe_blocks:
+            try:
+                # Il SemanticChunker processa solo 4000 caratteri alla volta. VRAM salva al 100%.
+                semantic_docs = self.semantic_splitter.create_documents([block])
+                for doc in semantic_docs:
+                    if doc.page_content.strip():
+                        text_chunks.append(f"{header}{doc.page_content.strip()}")
+            except Exception as e:
+                # Fallback di emergenza
+                text_chunks.append(f"{header}{block.strip()}")
         
         if not text_chunks:
             return []
             
-        # 4. CALCOLO EMBEDDING DEI CHUNK FINALI
+        # 3. Calcolo Embedding dei chunk finali in batch
         if self.embedding_model:
-            embeddings_tensors = self.embedding_model.encode(text_chunks, task="retrieval.passage")
+            embeddings_tensors = self.embedding_model.encode(text_chunks, task="retrieval.passage", batch_size=16)
         else:
             embeddings_tensors = [None] * len(text_chunks)
             
-        # 5. SALVATAGGIO
+        # 4. Salvataggio
         safe_title = re.sub(r'[^a-zA-Z0-9]', '', title)[:15]
         
         for idx, (text_chunk, emb) in enumerate(zip(text_chunks, embeddings_tensors)):
             all_expanded_chunks.append({
-                "text": text_chunk,             # Testo semanticamente coerente + Header
-                "embedding": emb,               # Embedding PyTorch
+                "text": text_chunk,             
+                "embedding": emb,               
                 "parent_id": f"{safe_title}_{idx}"
             })
 
