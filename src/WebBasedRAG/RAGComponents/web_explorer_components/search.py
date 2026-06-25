@@ -42,7 +42,12 @@ User Prompt:
 {natural_text}"""
             try:
                 response = self.llm.invoke(prompt)
-                cleaned_text = response.content.strip().lower()
+                content = response.content
+                if isinstance(content, list):
+                    content = " ".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in content])
+                elif not isinstance(content, str):
+                    content = str(content)
+                cleaned_text = content.strip().lower()
                 self.cache[natural_text] = cleaned_text
             except Exception as e:
                 print(f"  ️ Errore LLM: {e}.")

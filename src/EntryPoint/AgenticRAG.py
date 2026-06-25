@@ -15,32 +15,6 @@ import torch
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 
-class JinaEmbeddingsWrapper:
-    def __init__(self):
-        print("-- Caricamento Jina Embeddings per Web Search...")
-        self.model = SentenceTransformer(
-            "jinaai/jina-embeddings-v3", 
-            trust_remote_code=True,
-            model_kwargs={"torch_dtype": torch.bfloat16}
-        )
-
-    def encode(self, texts, **kwargs):
-        return self.model.encode(texts, **kwargs)
-
-    def compute_similarity(self, query_embedding, corpus_embeddings):
-        # Assicura che la query sia un tensore
-        if not isinstance(query_embedding, torch.Tensor):
-            query_embedding = torch.tensor(query_embedding)
-            
-        # Ottimizzazione: converte la lista in un array NumPy PRIMA del tensore
-        # (Questo elimina il warning rosso di PyTorch)
-        if isinstance(corpus_embeddings, list):
-            corpus_embeddings = torch.tensor(np.array(corpus_embeddings))
-        elif not isinstance(corpus_embeddings, torch.Tensor):
-            corpus_embeddings = torch.tensor(corpus_embeddings)
-            
-        # Usa la funzione nativa del pacchetto per calcolare la distanza coseno
-        return util.cos_sim(query_embedding, corpus_embeddings)
 
 # ==========================================
 # 1. SETUP PATHS
@@ -83,6 +57,7 @@ from WebBasedRAG.RAGComponents.planner import QueryPlanner
 from WebBasedRAG.RAGComponents.generator import AnswerGenerator
 from WebBasedRAG.RAGComponents.router import IntentRouter # <--- AGGIUNTO ROUTER
 from WebBasedRAG.RAGComponents.embeddings.nomic_embeddings import NomicEmbeddings
+from WebBasedRAG.RAGComponents.embeddings.jina_embeddings import JinaEmbeddings
 from WebBasedRAG.RAGComponents.session_state import GlobalSessionState
 from WebBasedRAG.RAGComponents.embeddings.gte_reranker import BGE8KReranker
 
@@ -141,7 +116,7 @@ class AgenticRag:
         
         #self.embeddings_model = NomicEmbeddings()
         print("-- Caricamento Jina Embeddings...")
-        self.embeddings_model = JinaEmbeddingsWrapper()
+        self.embeddings_model = JinaEmbeddings()
         self.reranker = BGE8KReranker()
         self.evaluator = RelevanceEvaluator(self.reranker)
         
@@ -175,11 +150,12 @@ class AgenticRag:
                 search_orchestrator=search_orch, 
                 html_crawler=HTMLCrawler(), 
                 pdf_extractor=PDFExtractor(), 
-                chunker=DocumentChunker(), 
+                chunker=DocumentChunker(embedding_model=self.embeddings_model), 
                 retrieval_engine=RetrievalEngine(self.embeddings_model, self.evaluator), 
                 smart_link_gen=SmartLinkGenerator(), 
                 pdf_server=PDFHighlightServer()
             )
+
             
             # Registrazione Tools
             registry = ToolRegistry()
