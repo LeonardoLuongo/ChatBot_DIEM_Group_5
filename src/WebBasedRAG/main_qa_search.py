@@ -166,7 +166,7 @@ def run_qa_bot():
     # =========================================================
     # ATTENZIONE: Questo deve essere il path alla cartella che CONTIENE il manifest.json
     # In base al tuo path, dovrebbe essere la root del DB
-    QDRANT_STORE_DIR = r"qdrant_trafilatura_1800_d6" 
+    QDRANT_STORE_DIR = os.getenv("DIEM_QDRANT_STORE_DIR", r"qdrant_trafilatura_1800_d6") 
     
     try:
         qdrant_service = QdrantService(store_dir_path=QDRANT_STORE_DIR)

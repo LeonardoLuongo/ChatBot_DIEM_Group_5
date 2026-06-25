@@ -5,3 +5,6 @@ searxng_docker/warp-data/**
 *.lock
 **/ValidationSet/*.json
 **/chunks_pro
+**/src/*.jsonl
+src/guardrails_log.jsonl
+*/session/*.jsonl
