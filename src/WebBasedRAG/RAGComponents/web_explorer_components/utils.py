@@ -131,22 +131,31 @@ class DocumentChunker:
         all_expanded_chunks = []
         text_chunks = []
         
-        # --- TWO-STAGE CHUNKING IN AZIONE ---
+        # --- ADAPTIVE CHUNKING IN AZIONE ---
         
         # 1. Taglio strutturale sicuro
         safe_blocks = self.base_splitter.split_text(markdown_text)
         
-        # 2. Taglio semantico sui blocchi sicuri
-        for block in safe_blocks:
-            try:
-                # Il SemanticChunker processa solo 4000 caratteri alla volta. VRAM salva al 100%.
-                semantic_docs = self.semantic_splitter.create_documents([block])
-                for doc in semantic_docs:
-                    if doc.page_content.strip():
-                        text_chunks.append(f"{header}{doc.page_content.strip()}")
-            except Exception as e:
-                # Fallback di emergenza
-                text_chunks.append(f"{header}{block.strip()}")
+        # 2. Fast-Track: Se la pagina è immensa, evitiamo la lentezza del SemanticChunker
+        is_massive_page = len(markdown_text) > 15000
+        
+        if is_massive_page:
+            # print(f"      ⚡ [FAST TRACK] Pagina enorme rilevata ({len(markdown_text)} char). Chunking semantico saltato per velocità.")
+            for block in safe_blocks:
+                if block.strip():
+                    text_chunks.append(f"{header}{block.strip()}")
+        else:
+            # Taglio semantico di precisione per le pagine normali
+            for block in safe_blocks:
+                try:
+                    semantic_docs = self.semantic_splitter.create_documents([block])
+                    for doc in semantic_docs:
+                        if doc.page_content.strip():
+                            text_chunks.append(f"{header}{doc.page_content.strip()}")
+                except Exception as e:
+                    # Fallback di emergenza
+                    if block.strip():
+                        text_chunks.append(f"{header}{block.strip()}")
         
         if not text_chunks:
             return []
