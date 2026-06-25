@@ -106,7 +106,7 @@ class AgenticRag:
         # Assicurati di avere la variabile d'ambiente GOOGLE_API_KEY impostata.
         
         # Consiglio flash per ruoli veloci/economici e pro per la generazione finale complessa
-        self.explorer_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0)
+        self.explorer_llm = ChatGoogleGenerativeAI(model="gemma-4-31b-it", temperature=1.0, top_p=0.95, top_k=64)
         self.agent_llm = ChatGoogleGenerativeAI(model="gemma-4-31b-it", temperature=1.0, top_p=0.95, top_k=64) 
         self.judge_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.3)
         
