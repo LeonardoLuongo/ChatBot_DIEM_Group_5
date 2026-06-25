@@ -4,3 +4,4 @@ searxng_docker/warp-data/**
 *.sqlite
 *.lock
 **/ValidationSet/*.json
+**/chunks_pro
