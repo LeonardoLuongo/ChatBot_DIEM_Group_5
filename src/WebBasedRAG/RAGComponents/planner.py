@@ -24,7 +24,7 @@ class TaskStep(BaseModel):
         description="The exact name of the tool to use for this step, copied strictly from the provided list of AVAILABLE TOOLS."
     )
     tool_intent: str = Field(
-        description="Directive for the execution agent: explicitly state EXACTLY which schema arguments must be populated (and where the data comes from), and which ones MUST strictly be left empty on the first attempt."
+        description="Directive for the execution agent. You MUST explicitly tell the agent WHICH parameters to fill, and WHERE to find them in the memory. Example: 'Extract the CFU number from the AVAILABLE KNOWLEDGE and pass it to the expression parameter'."
     )
 
 class ExecutionPlan(BaseModel):
@@ -54,6 +54,15 @@ You cannot plan a step if the agent won't have the required input arguments. Pay
 
 AVAILABLE TOOLS AND THEIR EXACT PYDANTIC SCHEMAS:
 {tools_schema}
+
+     
+AVAILABLE KNOWLEDGE IN MEMORY:
+{context}
+
+CRITICAL ANTI-HALLUCINATION RULE (THE "FETCH FIRST" DIRECTIVE):
+Look at the AVAILABLE KNOWLEDGE IN MEMORY. If the user asks to apply a rule, calculate a score, or process data, and the exact parameters/rules needed by your Tools are NOT present in the memory, your VERY FIRST STEP MUST be to use `SearchInternalDatabase` to find them. 
+NEVER assume you know the department's rules by default.
+
 
 CRITICAL TOOL ROUTING RULES (Memorize the difference between these tools):
 1. STUDENT TIMETABLES: If the user asks for STUDENT class timetables, lessons, or schedules based on a degree program, you MUST plan a step using `FetchStudentLessonsSchedule`. Do NOT use WebSearch.
@@ -91,7 +100,7 @@ PREVIOUS AUDITOR FEEDBACK (if any, use it to improve the plan):
         
         self.chain = self.prompt | self.structured_planner
 
-    def generate_plan(self, query: str, previous_feedback: str = "", current_iter: int = 1, max_iter: int = 3) -> ExecutionPlan:
+    def generate_plan(self, query: str, context: str = "", previous_feedback: str = "", current_iter: int = 1, max_iter: int = 3) -> ExecutionPlan:
         print(f"   🗓️ [PLANNER] Analisi della query (Iterazione {current_iter}/{max_iter})...")
         callbacks = [langfuse_handler] if os.getenv("IS_LANGFUSE_ENABLED") else []
         
@@ -99,13 +108,15 @@ PREVIOUS AUDITOR FEEDBACK (if any, use it to improve the plan):
             return self.chain.invoke(
                 {
                     "query": query, 
+                    "context": context, # <--- INIETTA IL CONTESTO QUI
                     "feedback": previous_feedback, 
                     "tools_schema": self.tools_schema,
-                    "current_iter": current_iter,  # <-- Inietto l'iterazione corrente
-                    "max_iter": max_iter           # <-- Inietto il limite massimo
+                    "current_iter": current_iter,
+                    "max_iter": max_iter
                 }, 
                 config={"callbacks": callbacks}
             )
+
         except Exception as e:
             print(f"\n   ⚠️ [PLANNER WARN] Errore JSON. Uso piano di fallback generico.")
             # Fallback: se fallisce, restituiamo un piano strutturato di base

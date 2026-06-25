@@ -55,12 +55,7 @@ CRITICAL MAPPING & CITATION RULES:
 5. If a document ID is not mentioned in your text, DO NOT include it in `sources_used`. DO NOT hallucinate or invent document IDs.
 6. Always respond in the exact same language as the user's `query`.
 7. EXTERNAL LINKS: If the context text contains external link markers like '[L1]', '[L2]', etc., you MUST preserve them. If you extract information attached to a link, copy the exact '[Lx]' tag in your text answer.
-8. If the context does not contain enough data to answer, state clearly what is missing and leave the `sources_used` list empty [].
-
-CRITICAL OUTPUT RULE: 
-You MUST output ONLY a valid JSON object. 
-DO NOT print any text, preamble, or markdown (like ```json) outside of the JSON block. 
-If you need to think or use a scratchpad, you MUST do it STRICTLY INSIDE the "thought_process" JSON field."""
+8. If the context does not contain enough data to answer, state clearly what is missing and leave the `sources_used` list empty []."""
 
     def _defensive_parsing(self, error: Exception) -> AnswerWithSources:
         """Metodo di emergenza per estrarre il JSON se il modello sbava testo (Preamble Leakage)"""
@@ -148,3 +143,35 @@ Use the feedback as a strict compass to fix the answer. Do NOT violate tone rule
                 result = result.model_copy(update={"sources_used": updated_sources})
                 print(f"   [POST-PARSER] Allineamento fonti completato. ID rilevati nel testo: {extracted_ids}")
         return result
+    
+
+    def ask_clarification(self, query: str, context: str, ambiguity_reason: str) -> AnswerWithSources:
+        print(" 🗣️ [GENERATOR] Generazione domanda di chiarimento per l'utente...")
+        callbacks = [langfuse_handler] if os.getenv("IS_LANGFUSE_ENABLED") else []
+        
+        clarify_system_prompt = f"""{self.system_prompt}
+        
+SPECIAL TASK: ACTIVE CLARIFICATION.
+The user's query is too broad. The auditor analyzed the context and found multiple valid options.
+Auditor's Analysis & Options: {ambiguity_reason}
+
+YOUR INSTRUCTIONS:
+1. Write a polite, direct response to the user.
+2. Explain that you found the information, but you need them to specify which option they want based EXACTLY on the Auditor's Analysis.
+3. List the available options clearly (e.g., using bullet points).
+4. Do NOT attempt to guess the answer. Just ask the clarification question.
+5. Leave the `sources_used` array completely empty: []."""
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", clarify_system_prompt),
+            ("human", "QUERY: {query}\n\nCONTEXT:\n{context}")
+        ])
+        
+        rag_chain = prompt | self.structured_llm
+        
+        try:
+            result = rag_chain.invoke({"context": context, "query": query}, config={"callbacks": callbacks})
+        except Exception as e:
+            result = self._defensive_parsing(e)
+            
+        return self._post_parse_sources(result)

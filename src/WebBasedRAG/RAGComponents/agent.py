@@ -3,11 +3,8 @@ from typing import List
 from datetime import datetime
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_ollama.chat_models import ChatOllama
-# Importiamo le classi per l'Agent nativo di LangChain
 from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
 from langchain_core.language_models.chat_models import BaseChatModel
-
 
 import os
 if os.getenv("IS_LANGFUSE_ENABLED"):
@@ -33,21 +30,34 @@ class SupervisorAgent:
         _datetime = (
             f"- Day: {day_of_week}\n"
             f"- Date (YYYY-MM-DD): {now.strftime('%Y-%m-%d')}\n"
-            f"- Time: (HH:MM:SS){now.strftime('%H:%M:%S')}\n"
+            f"- Time (HH:MM:SS): {now.strftime('%H:%M:%S')}\n"
             f"- Current Year: {now.year}\n"
         )
-        # 1. Definiamo il prompt per l'Agente
-        system_prompt = f"""You are an agent for the DIEM (Department of Information, Electrical, and Applied Mathematics Engineering) 
-department of the university of UNISA (UNiversity of SAlerno).
-You must answer and provide information about this department and its faculties, nothing else, even the other Engineering Department are out of your scope.
+        
+        # --- NUOVO PROMPT PER GEMINI ---
+        # L'uso dei tag <xml> aiuta i modelli avanzati a separare ruolo, contesto e istruzioni.
+        system_prompt = f"""<role>
+You are the official AI Assistant for the DIEM (Department of Information, Electrical, and Applied Mathematics Engineering) at UNISA (University of Salerno).
+Your primary goal is to retrieve information and assist users strictly regarding this department.
+</role>
 
-CURRENT DATE: {_datetime}
+<temporal_context>
+{_datetime}
+</temporal_context>
 
-To retrieve context about the department you have access to use the tools. 
+<constraints>
+- SCOPE: You are authorized to provide information ONLY about the DIEM department, its faculties, professors, and rules. 
+- OUT OF SCOPE: Other engineering departments or unrelated topics are out of scope. If asked, politely decline and clarify your role.
+- TRUTH: Rely entirely on the information retrieved via your tools. Do not hallucinate data.
+</constraints>
 
-IMPORTANT RULES:
-1. YOU MUST FOLLOW THE TASKS.
-2. IF THE TOOL IS A `Multi-Turn execution` YOU MUST BEGIN WITH ALL FIELD EMPTY, FOLLOW THE USER QUERY TO SELECT THE MOST LIKELY VALUE. DO NOT INSERT VALUES BEFORE THE TOOL PROMPTS YOU THE CHOISES.
+<tool_instructions>
+- You are a BLIND EXECUTOR. You have absolutely no strategic freedom.
+- You MUST follow the Execution Plan step-by-step, exactly as written. Do not skip steps, do not reorder them, and do not invent new tools to use.
+- PARAMETER EXTRACTION (YOUR ONLY JOB): The Planner will tell you to use a tool. You must look at the 'AVAILABLE KNOWLEDGE IN MEMORY' to find the exact numbers, rules, or names required by that tool's schema. 
+- NEVER hallucinate or guess parameter values. If the memory contains the rule, copy it strictly.
+- MULTI-TURN TOOLS: Always start with empty fields, wait for choices, then select based on the user's query.
+</tool_instructions>
 """
 
         agent_prompt = ChatPromptTemplate.from_messages([
@@ -72,21 +82,25 @@ IMPORTANT RULES:
         )
 
 
-    def run(self, user_query: str, plan: str = "", previous_feedback: str = "") -> tuple[str, bool]:
+    def run(self, user_query: str, context: str = "", plan: str = "", previous_feedback: str = "") -> tuple[str, bool]:
         """Esegue i tool. Restituisce (testo_del_contesto, True/False se ha trovato qualcosa)."""
         print(" 🤖 [AGENTE] Avvio esecuzione del piano...")
         callbacks = [langfuse_handler] if os.getenv("IS_LANGFUSE_ENABLED") else []
-        
+        # Inseriamo il contesto nella memoria dell'Agente!
+        base_input = f"AVAILABLE KNOWLEDGE IN MEMORY:\n{context}\n\nUser Query: {user_query}\n\n"
         if previous_feedback:
             agent_input = (
-                f"Your previous context was rejected by the auditor. Reason: '{previous_feedback}'.\n"
-                f"Original user query: {user_query}\n\n"
-                f"Follow this REVISED Execution Plan step-by-step to fix the issue:\n{plan}"
+                f"{base_input}"
+                f"ATTENTION: Your previous context was rejected by the auditor.\n"
+                f"Reason for rejection: '{previous_feedback}'.\n\n"
+                f"Original User Query: {user_query}\n\n"
+                f"Revised Execution Plan (Follow this step-by-step to fix the issue):\n{plan}"
             )
         else:
             agent_input = (
-                f"User Request: {user_query}\n\n"
-                f"Execution Plan (execute these steps sequentially using your tools):\n{plan}"
+                f"{base_input}"
+                f"User Query: {user_query}\n\n"
+                f"Execution Plan (Execute these steps sequentially using your tools):\n{plan}"
             )
 
         # FASE 1: L'agente esegue i tool (che riempiono autonomamente il DB)

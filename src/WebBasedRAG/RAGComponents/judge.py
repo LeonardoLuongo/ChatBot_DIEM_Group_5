@@ -20,6 +20,7 @@ class JudgeDecision(str, Enum):
     PASS = "PASS"
     REWRITE = "REWRITE"
     SEARCH_AGAIN = "SEARCH_AGAIN"
+    AMBIGUOUS = "AMBIGUOUS"
 
 
 class JudgeEvaluation(BaseModel):
@@ -55,7 +56,10 @@ EVALUATION STEPS (Think step-by-step in your reasoning):
 4. ANSWER CHECK: Is the 'ANSWER TO EVALUATE' entirely faithful to the Context, without hallucinating extra data?
 5. TONE & PERSONA CHECK: Does the answer reflect the persona of a direct, helpful, and professional agent representing the DIEM department? 
 6. DATE TRANSPARENCY CHECK: If the 'AVAILABLE CONTEXT' contains a publication or reference date, and the user did NOT specify a precise timeframe, does the 'ANSWER TO EVALUATE' explicitly mention this date to avoid misleading the user?
-
+7. FAULTY TOOL DETECTION (CRITICAL FOR MISDIAGNOSIS): Look closely at the documents in the context. Sometimes an execution tool (like a Calculator) outputs an illogical or wrong result because it was fed "dirty" text parameters. 
+   - If you see a tool result that is logically wrong, BUT the raw textual rule needed to answer correctly is ALSO present elsewhere in the 'AVAILABLE CONTEXT', the retrieval was SUCCESSFUL! 
+   - DO NOT trigger SEARCH_AGAIN (this would cause an infinite loop). 
+   - Instead, trigger REWRITE and explicitly instruct the Generator to IGNORE the faulty tool output and manually apply the correct raw rule found in the text.
 CRITICAL TONE RULES: 
 The assistant MUST NOT "break character". It must NEVER expose its internal mechanics. 
 Flags for a BAD tone include:
@@ -72,13 +76,11 @@ DECISION RULES:
   c) The Context contains dated information (but is still acceptable), and the Answer fails to explicitly declare this date to the user.
   d) The Context contains multiple valid alternatives for a broad query, but the Answer fails to ask the user to clarify, or asks for clarification in a generic/robotic way without using the available options.
   e) The Context is valid but the answer is not comlpete, do not contains all the data mentioned informations.
+  f) TOOL MISDIAGNOSIS: The context has the correct raw rule, but a tool calculation is wrong. Provide the DIRECT CORRECTION in your reasoning and instruct the Generator to adopt it.
 - SEARCH_AGAIN: Trigger this if the Context DOES NOT contain the answer OR any useful alternatives to clarify the user's intent. Also trigger this if it fails the TEMPORAL RELEVANCE CHECK (info is too old). In your reasoning, you MUST suggest specific concepts the search agent should use, and explicitly instruct it to find more recent documents or add current years to its query.
-
+- AMBIGUOUS: Trigger this if the 'ORIGINAL QUESTION' is too broad, AND the 'AVAILABLE CONTEXT' explicitly contains multiple distinct valid categories/options (e.g., Bachelor vs Master, different curricula, multiple professors with the same surname). In your reasoning, you MUST list the exact options found.
 LENIENCY DIRECTIVE (CRITICAL - FOLLOW THIS STRICTLY):
-{leniency_rules}
-
-CRITICAL OUTPUT RULE:
-Reply ONLY with a valid JSON object. Do NOT include any preamble, conversational text, or markdown code blocks (like ```json). All your reasoning must go inside the "reasoning" JSON field."""),
+{leniency_rules}"""),
             ("human", "ORIGINAL QUESTION: {query}\n\nAVAILABLE CONTEXT:\n{context}\n\nANSWER TO EVALUATE:\n{answer}")
         ])
         
