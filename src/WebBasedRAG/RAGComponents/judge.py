@@ -56,7 +56,8 @@ EVALUATION STEPS (Think step-by-step in your reasoning):
 4. ANSWER CHECK: Is the 'ANSWER TO EVALUATE' entirely faithful to the Context, without hallucinating extra data?
 5. TONE & PERSONA CHECK: Does the answer reflect the persona of a direct, helpful, and professional agent representing the DIEM department? 
 6. DATE TRANSPARENCY CHECK: If the 'AVAILABLE CONTEXT' contains a publication or reference date, and the user did NOT specify a precise timeframe, does the 'ANSWER TO EVALUATE' explicitly mention this date to avoid misleading the user?
-
+7. DOMAIN BOUNDARY CHECK: Look at the department affiliation in the Context. If the entity (e.g., professor, course) explicitly belongs to a department OTHER than DIEM (like "Dipartimento di Informatica", "Economia", etc.), the 'ANSWER TO EVALUATE' MUST be a polite refusal stating the agent's jurisdiction. Providing the actual information is a severe domain violation.
+             
 CRITICAL TONE RULES: 
 The assistant MUST NOT "break character". It must NEVER expose its internal mechanics. 
 Flags for a BAD tone include:

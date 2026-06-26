@@ -140,13 +140,16 @@ class GraduationGradeToolProvider(ToolProvider):
             StructuredTool(
                 name="calcola_voto_laurea",
                 description=(
-                    "Calcola il voto di laurea stimato di uno studente dell'Università degli Studi di Salerno (DIEM) "
-                    "applicando la formula ufficiale corretta in base al corso di laurea e alla coorte di immatricolazione. "
-                    "Supporta: Ingegneria Informatica (L-8 e LM-32), Ingegneria dell'Informazione per la Medicina Digitale (L-8 e LM-32), "
+                    "Calculate the estimated graduation grade for a student at the University of Salerno (DIEM) "
+                    "by applying the official formula adjusted for the specific degree program and enrollment cohort. "
+                    "Supported programs: Computer Engineering (L-8 and LM-32), Information Engineering for Digital Medicine (L-8 and LM-32), "
                     "Information Engineering for Digital Medicine (LM-32), Electrical Engineering for Digital Energy (LM-28). "
-                    "USARE QUESTO TOOL quando l'utente chiede: 'che voto prendo?', 'quanto sarà il mio voto di laurea?', "
-                    "'ho questa media, che voto posso prendere alla laurea?', o domande simili sul voto finale. "
-                    "Se il corso o la coorte non sono specificati, il tool chiederà all'utente le informazioni mancanti."
+                    "USE THIS TOOL when the user asks: 'what grade will I get?', 'what will my graduation grade be?', "
+                    "'I have this GPA, what graduation grade can I get?', or similar questions regarding the final grade. "
+                    "If the degree program or cohort is not specified, the tool will ask the user for the missing information."
+                    "CRITICAL RULE: DO NOT USE THIS TOOL if the user is merely asking for general explanations regarding the rules, "
+                    "formulas, or how the calculation works. Use this tool ONLY and EXCLUSIVELY if the user "
+                    "expresses an intention to perform an actual numerical calculation for their academic record."
                 ),
                 args_schema=GraduationGradeInput,
                 func=self._run,
