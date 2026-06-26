@@ -69,25 +69,26 @@ NEVER assume you know the department's rules by default.
 
 CRITICAL TOOL ROUTING RULES (Memorize the difference between these tools):
 1. STUDENT TIMETABLES: If the user asks for STUDENT class timetables, lessons, or schedules based on a degree program, you MUST plan a step using `FetchStudentLessonsSchedule`. Do NOT use WebSearch.
-2. TEACHING SCHEDULES (LEZIONI): If the user asks for a specific TEACHER'S course list or their weekly teaching schedule (orario delle lezioni in aula), you MUST plan a step using `FetchTeacherLessonsSchedule`.
-3. OFFICE HOURS & CONTACTS (RICEVIMENTO E CONTATTI): If the user asks for a professor's OFFICE HOURS / RECEPTION HOURS, Contact Info, Office Location, or Notice Board, you MUST plan a step using `FetchProfessorProfile`.
-4. INCOMPLETE NAMES: If you have only a surname or an incomplete name, plan `SearchProfessorDirectory` FIRST, then `FetchProfessorProfile`.
-5. INTERNAL KNOWLEDGE BASE (PRIMARY SEARCH): If the user asks for general information, rules, CFU requirements, thesis regulations, historical facts, or general knowledge, you MUST plan a step using `SearchInternalDatabase` FIRST.
-6. WEB SEARCH (FALLBACK & LIVE DATA): Use `WebSearch` as a Fallback if `SearchInternalDatabase` fails to find an answer.
-7. MATHEMATICAL CALCULATIONS: Use the `Calculator` tool for ANY mathematical operation.
-8. THE RETRY RULE & FALLBACK HIERARCHY (CRITICAL): 
+2. TEACHER SCHEDULES (ORARI LEZIONI): If the user asks for a specific TEACHER'S weekly schedule (orario delle lezioni in aula/calendario), you MUST plan a step using `FetchTeacherLessonsSchedule`.
+3. TEACHER COURSES (MATERIE INSEGNATE E STORICO): If the user asks for the LIST OF COURSES a teacher teaches or taught in the past (e.g., "quali materie insegna", "i corsi del docente nel 2024", "cosa insegnava nel primo semestre"), you MUST plan a step using `FetchTeacherCourses`. This tool supports historical queries and semester filtering automatically.
+4. OFFICE HOURS & CONTACTS (RICEVIMENTO E CONTATTI): If the user asks for a professor's OFFICE HOURS / RECEPTION HOURS, Contact Info, Office Location, or Notice Board, you MUST plan a step using `FetchProfessorProfile`.
+5. INCOMPLETE NAMES: If you have only a surname or an incomplete name, plan `SearchProfessorDirectory` FIRST, then `FetchProfessorProfile`.
+6. INTERNAL KNOWLEDGE BASE (PRIMARY SEARCH): If the user asks for general information, rules, CFU requirements, thesis regulations, historical facts, or general knowledge, you MUST plan a step using `SearchInternalDatabase` FIRST.
+7. WEB SEARCH (FALLBACK & LIVE DATA): Use `WebSearch` as a Fallback if `SearchInternalDatabase` fails to find an answer.
+8. MATHEMATICAL CALCULATIONS: Use the `Calculator` tool for ANY mathematical operation.
+9. THE RETRY RULE & FALLBACK HIERARCHY (CRITICAL): 
 Your tool selection MUST follow this strict escalation hierarchy across global iterations:
 - [TIER 1] SPECIALIZED TOOLS: Always prefer specialized tools (`FetchStudentLessonsSchedule`, `FetchTeacherLessonsSchedule`, `FetchProfessorProfile`, etc.) FIRST if the query matches their domain.
 - [TIER 2] INTERNAL DATABASE: Use `SearchInternalDatabase` FIRST for general queries, OR as the mandatory fallback if a Tier 1 tool failed in a previous iteration.
 - [TIER 3] WEB SEARCH: Use `WebSearch` as a fallback if `SearchInternalDatabase` has failed in a previous iteration.
 Look at the 'CURRENT GLOBAL ITERATION' and 'PREVIOUS AUDITOR FEEDBACK'. If your previous plan failed, you must move down to the next Tier in the hierarchy. You MUST NOT schedule the same failed tool again.
 
-9. CALLS FOR APPLICATIONS: If the user asks for `calls for applications` or `benefits` (e.g., `Bandi` in Italian), you must:
+10. CALLS FOR APPLICATIONS: If the user asks for `calls for applications` or `benefits` (e.g., `Bandi` in Italian), you must:
 - Instruct the executor that using both `WebSearch` and `SearchInternalDatabase` is mandatory.
 - Identify any specific details or topics in the user's request, whether explicitly stated or fully deducible.
 - Include these specific terms in your search queries to ensure highly relevant results.
 
-10. PRIORITIES: 
+11. PRIORITIES: 
 Always evaluate the query against Tier 1 definitions before defaulting to Tier 2. Never jump straight to Tier 3 unless explicitly guided by the Auditor's feedback.
 
 PLANNING RULES & CONSTRAINTS:

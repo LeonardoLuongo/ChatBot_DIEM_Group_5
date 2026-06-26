@@ -16,6 +16,21 @@ from langchain_core.language_models.chat_models import BaseChatModel
 # =====================================================================
 # MODELLI PYDANTIC PER L'ESTRAZIONE LLM INTERNA
 # =====================================================================
+class InfoInsegnamenti(BaseModel):
+    docente: str = Field(
+        default="", 
+        description="Professor's name strictly as 'LASTNAME FIRSTNAME' (e.g., 'GRECO ANTONIO')."
+    )
+    semestre: str = Field(
+        default="", 
+        description="The specific semester requested (e.g., 'primo semestre', 'secondo semestre', 'annuale'). Leave empty if not specified."
+    )
+    data: str = Field(
+        default="", 
+        description="Target date DD-MM-YYYY if a specific date or year is mentioned. Empty if absent."
+    )
+
+
 class InfoDocente(BaseModel):
     docente: str = Field(
         default="", 
@@ -33,7 +48,7 @@ class SceltaMenu(BaseModel):
     motivo: str = Field(description="Brief reason for the choice.")
 
 DEBUG = True
-TIMEOUT = 1500
+TIMEOUT = 900
 class EasyCourseService:
     """Service dedicato all'estrazione orari da EasyCourse Unisa tramite Playwright e LLM (Thick Tool)."""
 
@@ -404,7 +419,7 @@ class EasyCourseService:
         print(f"      📅 Data normalizzata per Playwright: '{info.data}'")
 
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=not(DEBUG))
             context = browser.new_context(viewport={"width": 1920, "height": 1080})
             page = context.new_page()
 
@@ -484,6 +499,337 @@ class EasyCourseService:
                 return json.dumps({"status": "ERROR", "message": f"Errore Playwright: {str(e)}"})
             finally:
                 browser.close()
+
+    # =====================================================================
+    # FLUSSO 3: INSEGNAMENTI DEL DOCENTE (Materie)
+    # =====================================================================
+    def fetch_teacher_courses(self, query: str) -> str:
+        """Esegue il workflow in un thread isolato (Safe per Gradio)."""
+        return self._pw_executor.submit(self.fetch_teacher_courses_isolato, query).result()
+
+    def fetch_teacher_courses_isolato(self, query: str) -> str:
+        print(f"   🤖 [TOOL-LLM] Analisi query insegnamenti docente: '{query}'")
+        
+        insegnamenti_parser = self.llm.with_structured_output(InfoInsegnamenti)
+        try:
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "Extract the professor's name ('docente'), the target semester ('semestre'), and the date ('data') from the user query. "
+                           "CRITICAL: Format 'docente' strictly as 'SURNAME NAME' (e.g. 'GRECO ANTONIO'). "
+                           "For 'semestre', extract words like 'primo semestre' or 'secondo semestre'. If none, leave empty. "
+                           "For 'data', extract a DD-MM-YYYY date if a specific year or date is mentioned."),
+                ("human", "{query}")
+            ])
+            info: InfoInsegnamenti = (prompt | insegnamenti_parser).invoke({"query": query})
+        except Exception:
+            info = InfoInsegnamenti(docente=query, semestre="", data="")
+
+        info.data = self._normalizza_data(info.data)
+        
+        # --- LOGICA SEMESTRE CORRENTE ---
+        is_default_semester = False
+        target_semestre = info.semestre.strip()
+        
+        if not target_semestre:
+            is_default_semester = True
+            dt = datetime.strptime(info.data, "%d-%m-%Y") if info.data else datetime.now()
+            # Calendario Didattico:
+            # Settembre (9) a Febbraio (2) -> Primo semestre
+            # Marzo (3) ad Agosto (8) -> Secondo semestre
+            if dt.month >= 9 or dt.month <= 2:
+                target_semestre = "Primo semestre"
+            else:
+                target_semestre = "Secondo semestre"
+            print(f"      📚 Nessun semestre specificato. Calcolato default: '{target_semestre}'")
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=not(DEBUG))
+            context = browser.new_context(viewport={"width": 1920, "height": 1080})
+            page = context.new_page()
+
+            try:
+                page.goto("https://easycourse.unisa.it/AgendaStudenti/index.php?view=easycourse&_lang=it&include=docente")
+                page.wait_for_load_state("domcontentloaded")
+                page.wait_for_timeout(TIMEOUT)
+
+                # -- STEP 1: ANNO ACCADEMICO --
+                opzioni_anno = self._estrai_opzioni_select(page, 'select[name="anno"]')
+                id_anno_scelto = self._calcola_anno_accademico(info.data, opzioni_anno)
+                
+                if id_anno_scelto:
+                    page.locator('select[name="anno"]').select_option(value=id_anno_scelto, force=True)
+                    self._attendi_ajax(page)
+
+                # -- STEP 2: DOCENTE --
+                opzioni_docenti_totali = self._estrai_opzioni_select(page, 'select[name="docente"]')
+                if not opzioni_docenti_totali:
+                    return json.dumps({"status": "ERROR", "message": "Nessun docente presente nel DB per l'anno selezionato."})
+
+                termine_da_cercare = info.docente if info.docente.strip() else query
+                opzioni_docenti_papabili = self._filtra_opzioni_fuzzy_fallback(termine_da_cercare, opzioni_docenti_totali, top_k=5)
+                id_docente_scelto = self._ask_llm_to_choose(query, opzioni_docenti_papabili, "Select the Professor full name")
+                
+                if not id_docente_scelto:
+                    return json.dumps({"status": "ERROR", "message": f"Impossibile determinare il docente '{termine_da_cercare}'."})
+                
+                page.locator('select[name="docente"]').select_option(value=id_docente_scelto, force=True)
+                self._attendi_ajax(page)
+
+                # -- STEP 3: PASSA A "ORARIO BASE" (via click reale, no jQuery.trigger) --
+                try:
+                    opzioni_tipo = self._select2_open_and_get_options(page, "doc_vo")
+                    print(f"      📋 Opzioni tipo orario: {opzioni_tipo}")
+
+                    val_orario_base = next(
+                        (v for t, v in opzioni_tipo.items() if "orario base" in t.lower()), None
+                    )
+                    if val_orario_base:
+                        self._select2_click_value(page, "doc_vo", val_orario_base)
+                        print("      ✅ Cliccato 'Orario base', attendo caricamento semestri via AJAX...")
+
+                        # Aspetta che il <select> nativo di doc_pd riceva le opzioni
+                        try:
+                            page.wait_for_function(
+                                """() => {
+                                    const sel = document.querySelector('select[name="doc_pd"]')
+                                            || document.querySelector('select[name="periodo"]');
+                                    return sel && sel.options.length > 1;
+                                }""",
+                                timeout=5000
+                            )
+                            print("      ✅ Semestri caricati nel native select.")
+                        except Exception:
+                            # EasyCourse potrebbe popolare solo la UI Select2, non il <select> nativo
+                            print("      ⚠️ Timeout: opzioni non nel native select, si userà Select2 UI.")
+
+                        page.wait_for_timeout(150)
+                    else:
+                        print("      ⚠️ Opzione 'Orario base' non trovata nel menu.")
+
+                except Exception as e:
+                    print(f"      ⚠️ STEP 3 fallito: {e}")
+
+                # -- STEP 4: SELEZIONE SEMESTRE --
+                # Prova prima il <select> nativo (dovrebbe essere popolato dall'AJAX)
+                opzioni_semestre = self._estrai_opzioni_select(page, 'select[name="doc_pd"]')
+                sem_name = "doc_pd"
+                if not opzioni_semestre:
+                    opzioni_semestre = self._estrai_opzioni_select(page, 'select[name="periodo"]')
+                    if opzioni_semestre:
+                        sem_name = "periodo"
+
+                # Fallback: native select vuoto → leggi direttamente dai <li> Select2
+                if not opzioni_semestre:
+                    print("      ℹ️ Native select vuoto, leggo opzioni dal dropdown Select2...")
+                    for candidate_name in ("doc_pd", "periodo"):
+                        try:
+                            opzioni_semestre = self._select2_open_and_get_options(page, candidate_name)
+                            if opzioni_semestre:
+                                sem_name = candidate_name
+                                break
+                        except Exception as e:
+                            print(f"         ⚠️ Select2 '{candidate_name}' non disponibile: {e}")
+
+                print(f"      📋 Opzioni semestre trovate ({sem_name}): {opzioni_semestre}")
+
+                if opzioni_semestre:
+                    id_sem_scelto = self._ask_llm_to_choose(
+                        target_semestre, opzioni_semestre, "Select the Teaching Period / Semester"
+                    )
+                    if id_sem_scelto:
+                        # _select2_click_value apre il dropdown se chiuso, clicca l'opzione
+                        if self._select2_click_value(page, sem_name, id_sem_scelto):
+                            self._attendi_ajax(page)
+                            print(f"      ✅ Semestre selezionato: '{id_sem_scelto}'")
+                        else:
+                            print(f"      ⚠️ Value '{id_sem_scelto}' non trovato tra i <li>.")
+                    else:
+                        print("      ⚠️ LLM non ha scelto alcun semestre.")
+                else:
+                    print("      ❌ Nessuna opzione semestre disponibile — si procede senza filtro periodo.")
+
+                # -- STEP 5: SUBMIT E ESTRAZIONE --
+                btn_locator = page.locator('button:has-text("Mostra"), input[value="Mostra Orario"]').first
+                if btn_locator.count() > 0:
+                    btn_locator.click()
+                else:
+                    page.evaluate("document.forms[0].submit()")
+                    
+                from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+                try:
+                    page.wait_for_selector('a.custom_color_text_legend', timeout=TIMEOUT + 1500)
+                    page.wait_for_timeout(500)
+                except PlaywrightTimeoutError:
+                    pass
+                    
+                insegnamenti_correnti = page.evaluate("""() => {
+                    let risultati = [];
+                    let items = document.querySelectorAll('a.custom_color_text_legend');
+                    items.forEach(a_tag => {
+                        let testo = a_tag.innerText || a_tag.textContent || "";
+                        if (testo.trim()) risultati.push(testo.trim());
+                    });
+                    return risultati;
+                }""")
+                
+                # -- COSTRUZIONE RISPOSTA FINALE --
+                if is_default_semester:
+                    avviso = "\n*⚠️ Nota: Poiché non è stato specificato alcun periodo nella richiesta, è stato selezionato automaticamente il semestre corrente.*\n"
+                else:
+                    avviso = ""
+                    
+                rif_display = target_semestre.capitalize()
+
+                if not insegnamenti_correnti:
+                    return json.dumps({
+                        "status": "SUCCESS", 
+                        "markdown_list": f"{avviso}\nNessun insegnamento trovato per questo docente nel periodo richiesto ({rif_display}).",
+                        "direct_url": page.url
+                    })
+                
+                md_final = f"### Materie Insegnate ({rif_display})\n{avviso}\n"
+                md_final += f"**Link Fonte Ufficiale:** [Consulta EasyCourse]({page.url})\n\n"
+                
+                for ins in sorted(insegnamenti_correnti):
+                    md_final += f"- {ins}\n"
+                    
+                return json.dumps({
+                    "status": "SUCCESS",
+                    "markdown_list": md_final,
+                    "direct_url": page.url
+                })
+
+            except Exception as e:
+                return json.dumps({"status": "ERROR", "message": f"Errore Playwright: {str(e)}"})
+            finally:
+                browser.close()
+
+    def _select2_open_and_get_options(self, page, select_name: str) -> Dict[str, str]:
+        """
+        Apre un dropdown Select2 via click reale e restituisce {testo_visibile: html_value}
+        leggendo i <li> (NON il <select> nativo, che può rimanere vuoto in modalità AJAX).
+        LASCIA IL DROPDOWN APERTO — chiama _select2_click_value subito dopo.
+        """
+        container_css = f"#select2-{select_name}-container"
+        results_css   = f"#select2-{select_name}-results li.select2-results__option--selectable"
+        prefix        = f"select2-{select_name}-result-"
+
+        page.locator(container_css).click(timeout=3000)
+        page.wait_for_timeout(400)
+        page.wait_for_selector(results_css, state="visible", timeout=5000)
+
+        # Estrae {testo: value} dai <li>
+        # ID pattern: select2-{name}-result-XXXX-{value}  →  slice prefix + skip "XXXX-"
+        return page.evaluate(f"""() => {{
+            const result = {{}};
+            const prefix = "{prefix}";
+            document.querySelectorAll("{results_css}").forEach(li => {{
+                const text = (li.innerText || "").trim();
+                const rest = (li.id || "").slice(prefix.length);   // "XXXX-<value>"
+                const dash = rest.indexOf("-");
+                const val  = dash !== -1 ? rest.slice(dash + 1) : "";
+                if (text && val) result[text] = val;
+            }});
+            return result;
+        }}""")
+
+
+    def _select2_click_value(self, page, select_name: str, option_value: str) -> bool:
+        """
+        Clicca l'opzione via click REALE Playwright (non JS .click()).
+        Così Select2 riceve mousedown/mouseup e aggiorna la selezione + triggera l'AJAX.
+        """
+        container_css = f"#select2-{select_name}-container"
+        results_css   = f"#select2-{select_name}-results li.select2-results__option--selectable"
+        prefix        = f"select2-{select_name}-result-"
+
+        # Apre il dropdown solo se non è già visibile
+        is_open = (
+            page.locator(results_css).count() > 0
+            and page.locator(results_css).first.is_visible()
+        )
+        if not is_open:
+            page.locator(container_css).click(timeout=3000)
+            page.wait_for_timeout(400)
+            page.wait_for_selector(results_css, state="visible", timeout=5000)
+
+        # Trova l'ID esatto del <li> via JS
+        # (gestisce valori con caratteri speciali come S1|ING_INF senza problemi)
+        li_id = page.evaluate(f"""(target) => {{
+            const prefix = "{prefix}";
+            for (const li of document.querySelectorAll("{results_css}")) {{
+                const rest = (li.id || "").slice(prefix.length);  // "XXXX-<value>"
+                const dash = rest.indexOf("-");
+                if (dash !== -1 && rest.slice(dash + 1) === target) {{
+                    return li.id;
+                }}
+            }}
+            return null;
+        }}""", option_value)
+
+        if not li_id:
+            print(f"         ⚠️ Nessun <li> trovato per value='{option_value}' in '{select_name}'")
+            return False
+
+        # ✅ Click REALE tramite Playwright — genera tutti gli eventi mouse che Select2 aspetta
+        # XPath evita problemi di escaping CSS con | e altri caratteri speciali negli ID
+        page.locator(f"xpath=//li[@id='{li_id}']").click(timeout=3000)
+        return True
+
+
+    def _estrai_lista_insegnamenti(self, page, data_target: str = "") -> str:
+        """Estrae l'elenco dei corsi insegnati dal docente dalla legenda HTML"""
+        from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
+        try:
+            # Attendiamo il caricamento degli elementi. Se va in timeout, non crashiamo: 
+            # significa semplicemente che la lista è vuota per quel semestre/anno.
+            try:
+                page.wait_for_selector('a.custom_color_text_legend', timeout=TIMEOUT + 1500)
+                page.wait_for_timeout(500)
+            except PlaywrightTimeoutError:
+                pass 
+            
+            dati_insegnamenti = page.evaluate("""() => {
+                let risultati = [];
+                // Selezioniamo direttamente i link con la classe specifica dei corsi!
+                let items = document.querySelectorAll('a.custom_color_text_legend');
+                items.forEach(a_tag => {
+                    let testo = a_tag.innerText || a_tag.textContent || "";
+                    testo = testo.trim();
+                    if (testo) {
+                        risultati.push(testo);
+                    }
+                });
+                return risultati;
+            }""")
+            
+            if not dati_insegnamenti:
+                rif = data_target if data_target else "l'anno corrente"
+                return json.dumps({
+                    "status": "SUCCESS", 
+                    "markdown_list": f"Nessun insegnamento trovato per questo docente nel periodo richiesto ({rif}).",
+                    "direct_url": page.url
+                })
+            
+            rif = f" (Riferimento temporale: {data_target})" if data_target else ""
+            
+            # --- AGGIUNTO LINK ESPLICITO ALLA FONTE UFFICIALE ---
+            md_final = f"### Materie Insegnate{rif}\n"
+            md_final += f"**Link Fonte Ufficiale:** [Consulta EasyCourse]({page.url})\n\n"
+            
+            for ins in dati_insegnamenti:
+                md_final += f"- {ins}\n"
+                
+            return json.dumps({
+                "status": "SUCCESS",
+                "markdown_list": md_final,
+                "direct_url": page.url
+            })
+            
+        except Exception as e:
+            return json.dumps({"status": "ERROR", "message": f"Errore estrazione legenda: {str(e)}"})
+
+
 
     # =====================================================================
     # ESTRAZIONE FINALE DELLA TABELLA (Comune a Studenti e Docenti)

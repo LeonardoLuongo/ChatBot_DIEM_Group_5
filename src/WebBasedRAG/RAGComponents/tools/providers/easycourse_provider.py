@@ -9,6 +9,18 @@ from WebBasedRAG.RAGComponents.session_state import GlobalSessionState
 # =====================================================================
 # SCHEMI INPUT SEMPLIFICATI (Thick Tool / Thin Agent)
 # =====================================================================
+class TeacherCoursesInput(BaseModel):
+    query: str = Field(
+        ..., 
+        description=(
+            "The natural language query from the user containing the professor's name and optionally a date, year, or semester. "
+            "Example: 'quali materie insegnava il professore Mario Rossi nel primo semestre 2024?' "
+            "RULE: If a past/future semester or year is mentioned, keep it in the query so the internal agent can calculate the exact date."
+        )
+    )
+
+
+
 class StudentScheduleInput(BaseModel):
     query: str = Field(
         ..., 
@@ -35,6 +47,53 @@ class EasyCourseToolProvider(ToolProvider):
         self.session_state = session_state
 
     def get_tools(self) -> List[StructuredTool]:
+        def fetch_teacher_courses_action(query: str) -> str:
+            # Deleghiamo il lavoro al Service
+            result_json = self.service.fetch_teacher_courses(query)
+            
+            try:
+                data = json.loads(result_json)
+                if data.get("status") == "SUCCESS":
+                    url = data.get("direct_url", "https://easycourse.unisa.it")
+                    md_list = data.get("markdown_list", "")
+                    
+                    doc_id = self.session_state._doc_counter + 1
+                    title = f"Insegnamenti Docente - Query: '{query}'"
+                    
+                    testo_da_salvare = (
+                        f"Titolo del Documento: {title}\n"
+                        f"Contesto: Lista degli insegnamenti estratti dal sistema EasyCourse per il docente indicato.\n\n"
+                        f"{md_list}"
+                    )
+                    
+                    self.session_state.add_source(
+                        url=url, 
+                        title=title, 
+                        testo_estratto=f"[Doc {doc_id}]\n{testo_da_salvare}",
+                        smart_url=url, 
+                        score=1.0
+                    )
+                    
+                    return f"✅ Insegnamenti del docente recuperati e salvati nel DB come [Doc {doc_id}]. Contenuto:\n{testo_da_salvare}\n"
+                else:
+                    return f"❌ Fallimento del tool interno: {data.get('message')}"
+            except Exception as e: 
+                return f"❌ Errore parsing risposta EasyCourse: {str(e)}"
+
+        # Configurazione dello strumento
+        teacher_courses_tool = StructuredTool.from_function(
+            func=fetch_teacher_courses_action,
+            name="FetchTeacherCourses",
+            description=(
+                "Fetches the list of courses taught by a specific Teacher (Docente). "
+                "It supports historical data: pass the user's natural language request directly to this tool, "
+                "including any specific year, semester, or date requested by the user."
+            ),
+            args_schema=TeacherCoursesInput
+        )
+
+
+
         
         def fetch_students_schedule_action(query: str) -> str:
             # Deleghiamo TUTTO il lavoro sporco al Service
@@ -125,4 +184,4 @@ class EasyCourseToolProvider(ToolProvider):
             args_schema=TeacherScheduleInput
         )
         
-        return [student_tool, teacher_tool]
+        return [student_tool, teacher_tool, teacher_courses_tool]

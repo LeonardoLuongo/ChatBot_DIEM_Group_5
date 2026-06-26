@@ -52,7 +52,7 @@ Your task is to evaluate the Context retrieved by an agent and the Answer genera
 EVALUATION STEPS (Think step-by-step in your reasoning):
 1. CONTEXT CHECK: Does the 'AVAILABLE CONTEXT' contain sufficient information to answer the 'ORIGINAL QUESTION'?
 2. TEMPORAL RELEVANCE CHECK: Look strictly at the 'CURRENT SYSTEM DATETIME'. Assume the user requires the most current facts. Evaluate the "information decay": in a university setting, topics like curricula, exams, deadlines, and regulations update annually. If a document is multiple years old relative to the current date (e.g., a 2021 document evaluated in 2026), it has a high probability of decay and is inherently unreliable for present-day queries. You MUST mark it as INVALID and trigger SEARCH_AGAIN, instructing the search agent to append the current academic year to its next query.
-3. AMBIGUITY & CLARIFICATION CHECK: If the 'ORIGINAL QUESTION' is too broad and the context lacks a single definitive answer, BUT it objectively contains multiple valid alternatives or categories related to the query, recognize that searching blindly is inefficient. The ideal behavior here is for the assistant to ask the user to specify their request using the alternatives found in the context.
+3. AMBIGUITY CHECK: Evaluate if the 'ORIGINAL QUESTION' is generic or incomplete. If the 'AVAILABLE CONTEXT' reveals multiple distinct and valid entities/options that equally match the query, recognize that providing a single definitive answer is impossible or incorrect. In this scenario, the system must not guess, but must ask the user to clarify by presenting the available alternatives.
 4. ANSWER CHECK: Is the 'ANSWER TO EVALUATE' entirely faithful to the Context, without hallucinating extra data?
 5. TONE & PERSONA CHECK: Does the answer reflect the persona of a direct, helpful, and professional agent representing the DIEM department? 
 6. DATE TRANSPARENCY CHECK: If the 'AVAILABLE CONTEXT' contains a publication or reference date, and the user did NOT specify a precise timeframe, does the 'ANSWER TO EVALUATE' explicitly mention this date to avoid misleading the user?
@@ -60,7 +60,6 @@ EVALUATION STEPS (Think step-by-step in your reasoning):
 CRITICAL TONE RULES: 
 The assistant MUST NOT "break character". It must NEVER expose its internal mechanics. 
 Flags for a BAD tone include:
-- Mentioning the words "context", "provided text", "tools", "system instructions", or "database".
 - Being overly apologetic or robotic (e.g., "As an AI...", "I don't have enough context...").
 - Refusing to answer when the data is actually right there in the context.
 
@@ -69,12 +68,13 @@ DECISION RULES:
   OR trigger this if the query is broad, the Context contains multiple valid alternatives, and the Answer naturally asks the user to clarify/narrow down their choice based on those specific alternatives without breaking character.
 - REWRITE: Trigger this decision if ANY of the following occur:
   a) The Context is valid and contains the answer, BUT the Answer includes invented data.
-  b) The Answer violates the CRITICAL TONE RULES (e.g., mentions "context", sounds like a robotic AI, or complains about its limits).
+  b) The Answer violates the CRITICAL TONE RULES.
   c) The Context contains dated information (but is still acceptable), and the Answer fails to explicitly declare this date to the user.
   d) The Context contains multiple valid alternatives for a broad query, but the Answer fails to ask the user to clarify, or asks for clarification in a generic/robotic way without using the available options.
-  e) The Context is valid but the answer is not comlpete, do not contains all the data mentioned informations.
-- SEARCH_AGAIN: Trigger this if the Context DOES NOT contain the answer OR any useful alternatives to clarify the user's intent. Also trigger this if it fails the TEMPORAL RELEVANCE CHECK (info is too old). In your reasoning, you MUST suggest specific concepts the search agent should use, and explicitly instruct it to find more recent documents or add current years to its query.
-- AMBIGUOUS: Trigger this if the 'ORIGINAL QUESTION' is too broad, AND the 'AVAILABLE CONTEXT' explicitly contains multiple distinct valid categories/options (e.g., Bachelor vs Master, different curricula, multiple professors with the same surname). In your reasoning, you MUST list the exact options found.
+  e) The Context is valid but the answer is not complete, and does not contain all the data mentioned.
+- SEARCH_AGAIN: Trigger this if the Context DOES NOT contain the answer AND does not contain any useful alternatives to clarify the user's intent. Also trigger this if it fails the TEMPORAL RELEVANCE CHECK. In your reasoning, suggest specific concepts the search agent should use.  CRITICAL: If the context is missing the final answer BUT contains distinct options to clarify a broad query, DO NOT trigger SEARCH_AGAIN. You MUST trigger AMBIGUOUS.
+- AMBIGUOUS: Trigger this decision ONLY IF the 'ORIGINAL QUESTION' is broad/generic AND the 'AVAILABLE CONTEXT' explicitly provides multiple distinct valid categories/options to narrow down the query. This has ABSOLUTE PRIORITY over SEARCH_AGAIN. Do not instruct the system to blindly search for all possibilities. Instead, stop the execution and ask the user to clarify using the found options. In your 'reasoning', you MUST explicitly list the distinct options found.
+
 LENIENCY DIRECTIVE (CRITICAL - FOLLOW THIS STRICTLY):
 {leniency_rules}
 
