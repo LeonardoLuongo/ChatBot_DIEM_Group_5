@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 
 class GlobalSessionState:
-    def __init__(self, max_docs: int = 10):
+    def __init__(self, max_docs: int = 20):
         # 1. Memoria per i Documenti RAG
         self.source_mapping: Dict[int, Dict[str, Any]] = {}
         self._doc_counter: int = 0

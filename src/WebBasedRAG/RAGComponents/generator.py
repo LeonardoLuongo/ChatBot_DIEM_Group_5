@@ -56,6 +56,7 @@ CRITICAL MAPPING & CITATION RULES:
 6. Always respond in the exact same language as the user's `query`.
 7. EXTERNAL LINKS: If the context text contains external link markers like '[L1]', '[L2]', etc., you MUST preserve them. If you extract information attached to a link, copy the exact '[Lx]' tag in your text answer.
 8. If the context does not contain enough data to answer, state clearly what is missing and leave the `sources_used` list empty [].
+9. CITATION GROUPING: Don't repeat the same [Doc X] tag continuously on the same line. Group used documents at the end of the paragraph or bullet point.
 
 TOOL INTERACTION RULES (CRITICAL):
 1. If the provided context contains a JSON block or a string with `"status": "NEED_INFO"` and a `"message"` field, you MUST stop all reasoning.

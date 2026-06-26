@@ -15,32 +15,6 @@ import torch
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 
-class JinaEmbeddingsWrapper:
-    def __init__(self):
-        print("-- Caricamento Jina Embeddings per Web Search...")
-        self.model = SentenceTransformer(
-            "jinaai/jina-embeddings-v3", 
-            trust_remote_code=True,
-            model_kwargs={"torch_dtype": torch.bfloat16}
-        )
-
-    def encode(self, texts, **kwargs):
-        return self.model.encode(texts, **kwargs)
-
-    def compute_similarity(self, query_embedding, corpus_embeddings):
-        # Assicura che la query sia un tensore
-        if not isinstance(query_embedding, torch.Tensor):
-            query_embedding = torch.tensor(query_embedding)
-            
-        # Ottimizzazione: converte la lista in un array NumPy PRIMA del tensore
-        # (Questo elimina il warning rosso di PyTorch)
-        if isinstance(corpus_embeddings, list):
-            corpus_embeddings = torch.tensor(np.array(corpus_embeddings))
-        elif not isinstance(corpus_embeddings, torch.Tensor):
-            corpus_embeddings = torch.tensor(corpus_embeddings)
-            
-        # Usa la funzione nativa del pacchetto per calcolare la distanza coseno
-        return util.cos_sim(query_embedding, corpus_embeddings)
 
 # ==========================================
 # 1. SETUP PATHS
@@ -83,6 +57,7 @@ from WebBasedRAG.RAGComponents.planner import QueryPlanner
 from WebBasedRAG.RAGComponents.generator import AnswerGenerator
 from WebBasedRAG.RAGComponents.router import IntentRouter # <--- AGGIUNTO ROUTER
 from WebBasedRAG.RAGComponents.embeddings.nomic_embeddings import NomicEmbeddings
+from WebBasedRAG.RAGComponents.embeddings.jina_embeddings import JinaEmbeddings
 from WebBasedRAG.RAGComponents.session_state import GlobalSessionState
 from WebBasedRAG.RAGComponents.embeddings.gte_reranker import BGE8KReranker
 
@@ -134,7 +109,7 @@ class AgenticRag:
         
         # Consiglio flash per ruoli veloci/economici e pro per la generazione finale complessa
         self.explorer_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0)
-        self.agent_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0, max_retries=3) 
+        self.agent_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0) 
         self.judge_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.3)
         
         # Per il generatore finale potresti voler usare il modello 'pro' se serve più ragionamento
@@ -143,7 +118,7 @@ class AgenticRag:
         
         #self.embeddings_model = NomicEmbeddings()
         print("-- Caricamento Jina Embeddings...")
-        self.embeddings_model = JinaEmbeddingsWrapper()
+        self.embeddings_model = JinaEmbeddings()
         self.reranker = BGE8KReranker()
         self.evaluator = RelevanceEvaluator(self.reranker)
         
@@ -177,11 +152,12 @@ class AgenticRag:
                 search_orchestrator=search_orch, 
                 html_crawler=HTMLCrawler(), 
                 pdf_extractor=PDFExtractor(), 
-                chunker=DocumentChunker(), 
+                chunker=DocumentChunker(embedding_model=self.embeddings_model), 
                 retrieval_engine=RetrievalEngine(self.embeddings_model, self.evaluator), 
                 smart_link_gen=SmartLinkGenerator(), 
                 pdf_server=PDFHighlightServer()
             )
+
             
             # Registrazione Tools
             registry = ToolRegistry()
@@ -352,7 +328,9 @@ INSTRUCTIONS:
                         context, 
                         final_result.answer, 
                         current_iter=rewrite_iter + 1, 
-                        max_iter=3
+                        max_iter=3,
+                        global_iter=global_iter + 1,
+                        max_global_iter=3
                     )
 
                     eval_color = "#22c55e" if evaluation.decision == "PASS" else "#ef4444"
@@ -376,56 +354,105 @@ INSTRUCTIONS:
                         self.session_state.clear()
                         break
 
-            # 5. FINALIZZAZIONE & LINK INJECTION
+            # =========================================================
+            # 5. FINALIZZAZIONE, CONSOLIDAMENTO CITAZIONI E LINK
+            # =========================================================
             if final_result:
                 final_text = final_result.answer
-                source_mapping = self.session_state.source_mapping
                 
-                # Post-Processing: Iniezione Link citati nel testo 
-                links_found = []
-                if is_success and hasattr(final_result, 'sources_used') and final_result.sources_used:
-                    all_possible_links = []
-                    for doc_id in set(final_result.sources_used):
-                        if doc_id in source_mapping:
-                            all_possible_links.extend(source_mapping[doc_id].get('external_links', []))
+                # --- A. POST-PROCESSING: CONSOLIDAMENTO CITAZIONI ---
+                def consolidate_citations(text):
+                    lines = text.split('\n')
+                    processed_lines = []
                     
-                    # Filtro anchor brevi o stop words
-                    stop_words = {"clicca", "qui", "link", "scarica", "download", "home", "sito", "pdf"}
-                    valid_links = []
-                    for link in all_possible_links:
-                        anchor = link['text'].strip()
-                        if len(anchor) > 4 and anchor.lower() not in stop_words:
-                            if not any(v['url'] == link['url'] for v in valid_links):
-                                valid_links.append(link)
+                    # Pattern super-aggressivo per catturare anche spazi anomali generati dall'LLM
+                    citation_pattern = re.compile(r'\[\s*(?:Doc\.?\s*)?\d+(?:\s*,\s*(?:Doc\.?\s*)?\d+)*\s*\]', re.IGNORECASE)
                     
-                    valid_links.sort(key=lambda x: len(x['text']), reverse=True)
-                    
-                    link_counter = 1
-                    for link in valid_links:
-                        anchor = link['text']
-                        pattern = re.compile(re.escape(anchor), re.IGNORECASE)
-                        if pattern.search(final_text):
-                            final_text = pattern.sub(f"**{anchor}** [{link_counter}]", final_text, count=1)
-                            links_found.append((link_counter, anchor, link['url']))
-                            link_counter += 1
+                    for line in lines:
+                        if not line.strip():
+                            processed_lines.append(line)
+                            continue
+                            
+                        citations = citation_pattern.findall(line)
+                        if citations:
+                            doc_ids = []
+                            for cit in citations:
+                                doc_ids.extend(re.findall(r'\d+', cit))
+                            
+                            unique_doc_ids = list(dict.fromkeys(doc_ids))
+                            
+                            # Rimuove le citazioni da in mezzo al testo
+                            clean_line = citation_pattern.sub('', line)
+                            clean_line = re.sub(r'\s{2,}', ' ', clean_line).strip()
+                            
+                            if unique_doc_ids:
+                                consolidated_cit = " " + " ".join([f"[Doc {id}]" for id in unique_doc_ids])
+                                
+                                # Inserisce i doc PRIMA del punto finale (se presente)
+                                if clean_line and clean_line[-1] in ['.', ';', ',', ':', '!']:
+                                    punct = clean_line[-1]
+                                    clean_line = clean_line[:-1].strip() + consolidated_cit + punct
+                                else:
+                                    clean_line += consolidated_cit
+                                    
+                            processed_lines.append(clean_line)
+                        else:
+                            processed_lines.append(line)
+                            
+                    return '\n'.join(processed_lines)
 
-                # Costruzione Lista Fonti per UI
-                testo_ui = final_text + "\n\n"
+                final_text = consolidate_citations(final_text)
+
+                # --- B. TRASFORMAZIONE IN LINK (HTML PURO) ---
+                source_mapping = self.session_state.source_mapping
+                cited_docs_ordered = [] 
+                doc_to_new_index = {}   
+
                 if is_success and hasattr(final_result, 'sources_used') and final_result.sources_used:
-                    testo_ui += "### 📚 Fonti Utilizzate\n"
-                    for doc_id in sorted(set(final_result.sources_used)):
-                        if doc_id in source_mapping:
-                            dati = source_mapping[doc_id]
-                            smart_url = dati.get('smart_url', dati['url'])
-                            testo_ui += f"- [Doc {doc_id}] **[{dati['titolo'][:65]}]({smart_url})**\n"
                     
-                    if links_found:
-                        testo_ui += "\n### 🔗 Link di approfondimento\n"
-                        for idx, anchor, url in links_found:
-                            testo_ui += f"- [{idx}] [{anchor}]({url})\n"
+                    def replace_citation(match):
+                        doc_id_str = match.group(1)
+                        real_doc_id = doc_id_str if doc_id_str in source_mapping else int(doc_id_str) if int(doc_id_str) in source_mapping else None
+                            
+                        if real_doc_id is not None:
+                            if real_doc_id not in doc_to_new_index:
+                                cited_docs_ordered.append(real_doc_id)
+                                doc_to_new_index[real_doc_id] = len(cited_docs_ordered)
+                            
+                            new_idx = doc_to_new_index[real_doc_id]
+                            dati = source_mapping[real_doc_id]
+                            url = dati.get('smart_url', dati.get('url', '#'))
+                            
+                            # NUOVO FORMATO HTML:
+                            # text-decoration: underline -> aggiunge la sottolineatura
+                            # color: #fb923c -> stesso colore del pallino
+                            # [ {new_idx} ] -> aggiunge gli spazi prima e dopo il numero
+                            return f" <a href='{url}' target='_blank' style='text-decoration: underline; color: #fb923c;'><b>[ {new_idx} ]</b></a>"
+                        
+                        return match.group(0)
+
+                    # Trova i [Doc X] appena spostati alla fine della frase e li trasforma
+                    pattern = re.compile(r'\[\s*(?:Doc\.?\s*)?(\d+)\s*\]', re.IGNORECASE)
+                    final_text = pattern.sub(replace_citation, final_text)
+
+                # --- C. COSTRUZIONE UI (PURO MARKDOWN, IL CSS FARA' IL RESTO) ---
+                testo_ui = final_text + "\n\n"
+                
+                # --- D. CREAZIONE DELLA BIBLIOGRAFIA ---
+                if cited_docs_ordered:
+                    testo_ui += "---\n### 📚 Fonti Utilizzate\n"
+                    for idx, doc_id in enumerate(cited_docs_ordered, start=1):
+                        dati = source_mapping[doc_id]
+                        url = dati.get('smart_url', dati.get('url', '#'))
+                        titolo = dati.get('titolo', 'Documento senza titolo').strip()
+                        
+                        if len(titolo) > 90:
+                            titolo = titolo[:87] + "..."
+                            
+                        testo_ui += f"{idx}. **[{titolo}]({url})**\n"
 
                 append_history_turn(HISTORY_FILE, user=raw_query, final_query=clean_query, assistant=final_result.answer)
-                yield self.log("SISTEMA", "Elaborazione completata con successo.", color="#22c55e"), testo_ui
+                yield self.log("SISTEMA", "Elaborazione completata con formattazione.", color="#22c55e"), testo_ui
                 
         # =========================================================
         # GESTIONE ECCEZIONI: Cattura l'errore 503 o qualsiasi altro crash
@@ -458,9 +485,26 @@ pro_dark_theme = gr.themes.Soft(primary_hue="orange", neutral_hue="slate").set(
 minimal_css = """
 #log_panel { height: 550px !important; overflow-y: auto !important; padding: 15px; background: #1e293b; border-radius: 8px; border: 1px solid #334155; }
 .gradio-container { max-width: 100% !important; padding: 0 20px !important; }
+/* Giustifica il testo del chatbot */
+.message.bot .prose {
+    text-align: justify !important;
+}
+
+/* Modifica gli elenchi puntati: pallini più a destra e testo vicino */
+.message.bot .prose ul {
+    padding-left: 3rem !important; /* Sposta l'intero elenco (e il pallino) più a destra */
+    margin-top: 0.5rem !important;
+}
+.message.bot .prose li {
+    padding-left: 0.2rem !important; /* Avvicina il testo al pallino */
+    margin-bottom: 0.4rem !important; /* Spazio tra le righe dell'elenco */
+}
+.message.bot .prose li::marker {
+    color: #fb923c; /* Rende il pallino arancione (tema DIEM), se vuoi rimuovilo */
+}
 """
 
-logo_path = os.path.join(SRC_PATH, "logo_ChatBot_DIEM_Gruop5.png")
+logo_path = os.path.join(SRC_PATH.parent , "logo_ChatBot_DIEM_Gruop5.png")
 
 with gr.Blocks(fill_width=True, css=minimal_css) as demo:
     with gr.Row():

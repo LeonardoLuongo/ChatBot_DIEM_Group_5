@@ -60,8 +60,8 @@ class QdrantToolProvider(ToolProvider):
             # Riduciamo il pool iniziale per velocità
             frammenti_estesi = scored_candidates[:20]
             
-            # --- LIMITE CHUNK: Massimo 3 frammenti per ogni singola pagina web ---
-            MAX_CHUNKS_PER_URL = 3 
+            # --- LIMITE CHUNK: Massimo frammenti per ogni singola pagina web ---
+            MAX_CHUNKS_PER_URL = 10 
             
             documenti_raggruppati = {}
             for score, candidate in frammenti_estesi:
@@ -94,8 +94,8 @@ class QdrantToolProvider(ToolProvider):
             # Ordiniamo i documenti raggruppati per il loro score migliore
             top_grouped_docs = sorted(documenti_raggruppati.items(), key=lambda x: x[1]["best_score"], reverse=True)
             
-            # Passiamo i 6 documenti migliori (Snelli e iper-focalizzati)
-            top_urls = top_grouped_docs[:6]
+            # Passiamo i 10 documenti migliori (Snelli e iper-focalizzati)
+            top_urls = top_grouped_docs[:10]
             
             # 4. SALVATAGGIO
             preview_blocks = []

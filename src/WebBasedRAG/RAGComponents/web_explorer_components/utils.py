@@ -82,73 +82,101 @@ class DocumentChunkerOld:
                 return []
 
 
+import re
+import torch
 from dataclasses import dataclass
 from typing import Any
+from langchain_experimental.text_splitter import SemanticChunker
+from langchain_core.embeddings import Embeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from chonkie import LateChunker
-import torch
-import re
 
-# Semplice wrapper per simulare il comportamento di Chonkie ma con il testo espanso
-@dataclass
-class ExpandedChunk:
-    text: str
-    embedding: Any
+# 1. Wrapper per Jina
+class JinaLangChainWrapper(Embeddings):
+    def __init__(self, model):
+        self.model = model
+    def embed_documents(self, texts):
+        return self.model.encode(texts, task="retrieval.passage", batch_size=16).tolist()
+    def embed_query(self, text):
+        return self.model.encode([text], task="retrieval.query", batch_size=1)[0].tolist()
 
 class DocumentChunker:
-    def __init__(self):
-        print("Caricamento Chonkie (Modalità: Late Chunking + Small-to-Big) in corso...")
+    def __init__(self, embedding_model=None):
+        self.embedding_model = embedding_model
+        print("Caricamento Chunker (Modalità: Two-Stage Recursive + Semantic)...")
         
-        # 1. CHILD SPLITTER: Genera i vettori ultra-precisi (Small)
-        self.child_chunker = LateChunker(
-            embedding_model="nomic-ai/nomic-embed-text-v1.5", 
-            chunk_size=128,
-            trust_remote_code=True,
-            min_characters_per_chunk=50
+        # STADIO 1: Il "Garante della Memoria". Assicura che nessun blocco superi i 4000 caratteri.
+        self.base_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=4000, 
+            chunk_overlap=400,
+            separators=["\n\n", "\n", ".", "?", "!", " ", ""]
         )
         
-        # 2. PARENT SPLITTER: Genera i blocchi di testo da passare all'LLM (Big)
-        # 1500 caratteri sono perfetti per l'LLM: abbastanza grandi per il contesto, non troppo da saturare la VRAM
-        self.parent_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1500,   
-            chunk_overlap=200,  
-            separators=["\n\n", "\n", ".", " ", ""]
-        )
+        if self.embedding_model:
+            self.lc_embedder = JinaLangChainWrapper(self.embedding_model)
+            # STADIO 2: Il "Rifinitore Logico". Trova il senso compiuto dentro i blocchi di 4000 char.
+            self.semantic_splitter = SemanticChunker(
+                self.lc_embedder, 
+                breakpoint_threshold_type="percentile" 
+            )
+        else:
+            self.semantic_splitter = self.base_splitter
 
     def process_markdown(self, markdown_text: str, title: str = "", date_str: str = "") -> list:
         # Pulizia base
         markdown_text = re.sub(r'\n{3,}', '\n\n', markdown_text).strip()
         
-        # Header semantico
         header_date = f"Data di pubblicazione/riferimento: {date_str}\n" if date_str else ""
         header = f"Titolo Pagina/Documento: {title}\n{header_date}\n"
         
-        # 1. Creiamo i PARENT CHUNKS
-        parent_docs = self.parent_splitter.split_text(markdown_text)
-        
         all_expanded_chunks = []
-        seen_texts = set() # Per deduplicazione immediata
+        text_chunks = []
         
-        for p_idx, parent_text in enumerate(parent_docs):
-            full_parent_text = header + parent_text
-            full_parent_text = re.sub(r'\n{3,}', '\n\n', full_parent_text).strip()
+        # --- ADAPTIVE CHUNKING IN AZIONE ---
+        
+        # 1. Taglio strutturale sicuro
+        safe_blocks = self.base_splitter.split_text(markdown_text)
+        
+        # 2. Fast-Track: Se la pagina è immensa, evitiamo la lentezza del SemanticChunker
+        is_massive_page = len(markdown_text) > 15000
+        
+        if is_massive_page:
+            # print(f"      ⚡ [FAST TRACK] Pagina enorme rilevata ({len(markdown_text)} char). Chunking semantico saltato per velocità.")
+            for block in safe_blocks:
+                if block.strip():
+                    text_chunks.append(f"{header}{block.strip()}")
+        else:
+            # Taglio semantico di precisione per le pagine normali
+            for block in safe_blocks:
+                try:
+                    semantic_docs = self.semantic_splitter.create_documents([block])
+                    for doc in semantic_docs:
+                        if doc.page_content.strip():
+                            text_chunks.append(f"{header}{doc.page_content.strip()}")
+                except Exception as e:
+                    # Fallback di emergenza
+                    if block.strip():
+                        text_chunks.append(f"{header}{block.strip()}")
+        
+        if not text_chunks:
+            return []
             
-            # Generiamo un ID univoco per questo Padre (es. Titolo_0, Titolo_1)
-            safe_title = re.sub(r'[^a-zA-Z0-9]', '', title)[:15]
-            parent_id = f"{safe_title}_{p_idx}"
+        # 3. Calcolo Embedding dei chunk finali in batch
+        if self.embedding_model:
+            embeddings_tensors = self.embedding_model.encode(text_chunks, task="retrieval.passage", batch_size=16)
+        else:
+            embeddings_tensors = [None] * len(text_chunks)
             
-            # 2. Creiamo i CHILD CHUNKS a partire da questo specifico Padre
-            small_chunks = self.child_chunker.chunk(full_parent_text)
-            
-            for child in small_chunks:
-                # MAGIA: Abbiniamo l'embedding del Figlio al testo del Padre, e salviamo il parent_id!
-                all_expanded_chunks.append({
-                    "text": full_parent_text, # TESTO BIG
-                    "embedding": child.embedding, # VETTORE SMALL
-                    "parent_id": parent_id # ID UNIVOCO PER DEDUPLICAZIONE
-                })
+        # 4. Salvataggio
+        safe_title = re.sub(r'[^a-zA-Z0-9]', '', title)[:15]
+        
+        for idx, (text_chunk, emb) in enumerate(zip(text_chunks, embeddings_tensors)):
+            all_expanded_chunks.append({
+                "text": text_chunk,             
+                "embedding": emb,               
+                "parent_id": f"{safe_title}_{idx}"
+            })
 
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         return all_expanded_chunks

@@ -32,7 +32,7 @@ class SceltaMenu(BaseModel):
     scelta_html_value: str = Field(description="The EXACT HTML value extracted from the provided dictionary.")
     motivo: str = Field(description="Brief reason for the choice.")
 
-DEBUG = False
+DEBUG = True
 TIMEOUT = 1500
 class EasyCourseService:
     """Service dedicato all'estrazione orari da EasyCourse Unisa tramite Playwright e LLM (Thick Tool)."""
@@ -345,9 +345,16 @@ class EasyCourseService:
                 if info.data:
                     js_code = f"""
                     (() => {{
-                        let dateInput = document.querySelector('input.hasDatepicker') || document.querySelector('input[name="data"]');
+                        // 1. Cerca il campo con id="date" o name="date" (come da HTML)
+                        let dateInput = document.getElementById('date') || document.querySelector('input[name="date"]');
                         if (dateInput) {{
+                            // 2. Rimuove il blocco readonly per permettere la sovrascrittura
+                            dateInput.removeAttribute('readonly');
+                            
+                            // 3. Forza la data
                             dateInput.value = '{info.data}';
+                            
+                            // 4. Avvisa il form che il valore è cambiato
                             dateInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
                             dateInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
                         }}
@@ -446,9 +453,16 @@ class EasyCourseService:
                 if info.data:
                     js_code = f"""
                     (() => {{
-                        let dateInput = document.querySelector('input.hasDatepicker') || document.querySelector('input[name="data"]');
+                        // 1. Cerca il campo con id="date" o name="date" (come da HTML)
+                        let dateInput = document.getElementById('date') || document.querySelector('input[name="date"]');
                         if (dateInput) {{
+                            // 2. Rimuove il blocco readonly per permettere la sovrascrittura
+                            dateInput.removeAttribute('readonly');
+                            
+                            // 3. Forza la data
                             dateInput.value = '{info.data}';
+                            
+                            // 4. Avvisa il form che il valore è cambiato
                             dateInput.dispatchEvent(new Event('input', {{ bubbles: true }}));
                             dateInput.dispatchEvent(new Event('change', {{ bubbles: true }}));
                         }}

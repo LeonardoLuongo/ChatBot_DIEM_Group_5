@@ -36,9 +36,13 @@ class RetrievalEngine:
             texts_corpus = [c["text"] for c in chunks]
             # ESTREMA VELOCITÀ: I chunk hanno già l'embedding dal Late Chunking.
             # Li impiliamo direttamente e li carichiamo sulla GPU/CPU.
-            corpus_embeddings = torch.tensor(
-                [c["embedding"] for c in chunks], dtype=torch.float32
-            ).to(self.embeddings.device)
+            embeddings_list = [c["embedding"] for c in chunks]
+            if len(embeddings_list) > 0 and isinstance(embeddings_list[0], torch.Tensor):
+                corpus_embeddings = torch.stack(embeddings_list).to(dtype=torch.float32, device=self.embeddings.device)
+            else:
+                corpus_embeddings = torch.tensor(
+                    np.array(embeddings_list), dtype=torch.float32
+                ).to(self.embeddings.device)
             
             # Codifichiamo solo la domanda dell'utente
             query_embedding = self.embeddings.encode([query], task="retrieval.query")
@@ -80,9 +84,13 @@ class RetrievalEngine:
             
             if orphan_chunks:
                 # Usiamo gli embedding pre-calcolati anche qui
-                corpus_embeddings = torch.tensor(
-                    [c["embedding"] for c in orphan_chunks], dtype=torch.float32
-                ).to(self.embeddings.device)
+                orphan_embs = [c["embedding"] for c in orphan_chunks]
+                if len(orphan_embs) > 0 and isinstance(orphan_embs[0], torch.Tensor):
+                    corpus_embeddings = torch.stack(orphan_embs).to(dtype=torch.float32, device=self.embeddings.device)
+                else:
+                    corpus_embeddings = torch.tensor(
+                        np.array(orphan_embs), dtype=torch.float32
+                    ).to(self.embeddings.device)
                 
                 query_embedding = self.embeddings.encode([query], task="retrieval.query")
                 similarities = self.embeddings.compute_similarity(query_embedding, corpus_embeddings)[0]

@@ -2,10 +2,11 @@
 # FILE: RAGComponents/planner.py
 # ================================================
 import os
+from datetime import datetime
 from typing import List, Literal
 from pydantic import BaseModel, Field
-from langchain_core.prompts import ChatPromptTemplate
 from langchain_ollama.chat_models import ChatOllama
+from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.tools import render_text_description_and_args
 from langchain_core.language_models.chat_models import BaseChatModel
 
@@ -46,6 +47,8 @@ class QueryPlanner:
         self.prompt = ChatPromptTemplate.from_messages([
     ("system", """You are the Lead Task Planner Agent for the DIEM department (UNISA).
 Your exact goal is to decompose a user's complex query into a strict Execution Plan.
+
+Do NOT use your internal training date. We are currently in this datetime: {current_datetime}
 
 CURRENT GLOBAL ITERATION: {current_iter} of {max_iter}
 
@@ -101,12 +104,15 @@ PREVIOUS AUDITOR FEEDBACK (if any, use it to improve the plan):
         self.chain = self.prompt | self.structured_planner
 
     def generate_plan(self, query: str, context: str = "", previous_feedback: str = "", current_iter: int = 1, max_iter: int = 3) -> ExecutionPlan:
+        current_dt = datetime.now().strftime("%A, %Y-%m-%d %H:%M:%S")
+
         print(f"   🗓️ [PLANNER] Analisi della query (Iterazione {current_iter}/{max_iter})...")
         callbacks = [langfuse_handler] if os.getenv("IS_LANGFUSE_ENABLED") else []
         
         try:
             return self.chain.invoke(
                 {
+                    "current_datetime": current_dt,
                     "query": query, 
                     "context": context, # <--- INIETTA IL CONTESTO QUI
                     "feedback": previous_feedback, 
