@@ -111,6 +111,7 @@ class AgenticRag:
         self.explorer_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0)
         self.agent_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0) 
         self.judge_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.3)
+        #self.final_rewriter_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0)
         
         # Per il generatore finale potresti voler usare il modello 'pro' se serve più ragionamento
         self.gen_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0) 
@@ -355,55 +356,13 @@ INSTRUCTIONS:
                         break
 
             # =========================================================
-            # 5. FINALIZZAZIONE, CONSOLIDAMENTO CITAZIONI E LINK
+            # 5. FINALIZZAZIONE & LINK INJECTION
             # =========================================================
             if final_result:
+                # Prendiamo la risposta formattata direttamente dall'LLM
                 final_text = final_result.answer
                 
-                # --- A. POST-PROCESSING: CONSOLIDAMENTO CITAZIONI ---
-                def consolidate_citations(text):
-                    lines = text.split('\n')
-                    processed_lines = []
-                    
-                    # Pattern super-aggressivo per catturare anche spazi anomali generati dall'LLM
-                    citation_pattern = re.compile(r'\[\s*(?:Doc\.?\s*)?\d+(?:\s*,\s*(?:Doc\.?\s*)?\d+)*\s*\]', re.IGNORECASE)
-                    
-                    for line in lines:
-                        if not line.strip():
-                            processed_lines.append(line)
-                            continue
-                            
-                        citations = citation_pattern.findall(line)
-                        if citations:
-                            doc_ids = []
-                            for cit in citations:
-                                doc_ids.extend(re.findall(r'\d+', cit))
-                            
-                            unique_doc_ids = list(dict.fromkeys(doc_ids))
-                            
-                            # Rimuove le citazioni da in mezzo al testo
-                            clean_line = citation_pattern.sub('', line)
-                            clean_line = re.sub(r'\s{2,}', ' ', clean_line).strip()
-                            
-                            if unique_doc_ids:
-                                consolidated_cit = " " + " ".join([f"[Doc {id}]" for id in unique_doc_ids])
-                                
-                                # Inserisce i doc PRIMA del punto finale (se presente)
-                                if clean_line and clean_line[-1] in ['.', ';', ',', ':', '!']:
-                                    punct = clean_line[-1]
-                                    clean_line = clean_line[:-1].strip() + consolidated_cit + punct
-                                else:
-                                    clean_line += consolidated_cit
-                                    
-                            processed_lines.append(clean_line)
-                        else:
-                            processed_lines.append(line)
-                            
-                    return '\n'.join(processed_lines)
-
-                final_text = consolidate_citations(final_text)
-
-                # --- B. TRASFORMAZIONE IN LINK (HTML PURO) ---
+                # --- TRASFORMAZIONE IN LINK HTML ---
                 source_mapping = self.session_state.source_mapping
                 cited_docs_ordered = [] 
                 doc_to_new_index = {}   
@@ -423,22 +382,18 @@ INSTRUCTIONS:
                             dati = source_mapping[real_doc_id]
                             url = dati.get('smart_url', dati.get('url', '#'))
                             
-                            # NUOVO FORMATO HTML:
-                            # text-decoration: underline -> aggiunge la sottolineatura
-                            # color: #fb923c -> stesso colore del pallino
-                            # [ {new_idx} ] -> aggiunge gli spazi prima e dopo il numero
+                            # Formatta il link come richiesto: [ N ] sottolineato e colorato
                             return f" <a href='{url}' target='_blank' style='text-decoration: underline; color: #fb923c;'><b>[ {new_idx} ]</b></a>"
                         
                         return match.group(0)
 
-                    # Trova i [Doc X] appena spostati alla fine della frase e li trasforma
-                    pattern = re.compile(r'\[\s*(?:Doc\.?\s*)?(\d+)\s*\]', re.IGNORECASE)
+                    # Intercetta i [ X ] generati dall'LLM
+                    pattern = re.compile(r'\[\s*(\d+)\s*\]')
                     final_text = pattern.sub(replace_citation, final_text)
 
-                # --- C. COSTRUZIONE UI (PURO MARKDOWN, IL CSS FARA' IL RESTO) ---
-                testo_ui = final_text + "\n\n"
+                # --- COSTRUZIONE UI E BIBLIOGRAFIA ---
+                testo_ui = f"{final_text}\n\n"
                 
-                # --- D. CREAZIONE DELLA BIBLIOGRAFIA ---
                 if cited_docs_ordered:
                     testo_ui += "---\n### 📚 Fonti Utilizzate\n"
                     for idx, doc_id in enumerate(cited_docs_ordered, start=1):
@@ -452,7 +407,7 @@ INSTRUCTIONS:
                         testo_ui += f"{idx}. **[{titolo}]({url})**\n"
 
                 append_history_turn(HISTORY_FILE, user=raw_query, final_query=clean_query, assistant=final_result.answer)
-                yield self.log("SISTEMA", "Elaborazione completata con formattazione.", color="#22c55e"), testo_ui
+                yield self.log("SISTEMA", "Generazione e formattazione completate.", color="#22c55e"), testo_ui
                 
         # =========================================================
         # GESTIONE ECCEZIONI: Cattura l'errore 503 o qualsiasi altro crash
@@ -485,22 +440,32 @@ pro_dark_theme = gr.themes.Soft(primary_hue="orange", neutral_hue="slate").set(
 minimal_css = """
 #log_panel { height: 550px !important; overflow-y: auto !important; padding: 15px; background: #1e293b; border-radius: 8px; border: 1px solid #334155; }
 .gradio-container { max-width: 100% !important; padding: 0 20px !important; }
-/* Giustifica il testo del chatbot */
-.message.bot .prose {
+
+/* Giustifica i paragrafi normali */
+.message.bot .prose p {
     text-align: justify !important;
 }
 
-/* Modifica gli elenchi puntati: pallini più a destra e testo vicino */
+/* Stile per gli elenchi puntati */
 .message.bot .prose ul {
-    padding-left: 3rem !important; /* Sposta l'intero elenco (e il pallino) più a destra */
-    margin-top: 0.5rem !important;
+    list-style-type: disc !important; /* Pallino pieno */
+    list-style-position: outside !important; /* Mantiene la seconda riga allineata con la prima! */
+    padding-left: 2rem !important; /* Rientro totale dell'elenco verso destra */
+    margin-top: 0.8rem !important;
+    margin-bottom: 0.8rem !important;
 }
+
 .message.bot .prose li {
-    padding-left: 0.2rem !important; /* Avvicina il testo al pallino */
-    margin-bottom: 0.4rem !important; /* Spazio tra le righe dell'elenco */
+    text-align: justify !important; /* FORZA IL GIUSTIFICATO ANCHE NELLE LISTE */
+    padding-left: 0.3rem !important; /* Distanza tra pallino e testo */
+    margin-bottom: 0.6rem !important; /* Spazio tra un punto e l'altro */
+    line-height: 1.6 !important;
 }
+
+/* Colore e dimensione del pallino */
 .message.bot .prose li::marker {
-    color: #fb923c; /* Rende il pallino arancione (tema DIEM), se vuoi rimuovilo */
+    color: #fb923c !important; /* Arancione DIEM */
+    font-size: 1.1em !important;
 }
 """
 
