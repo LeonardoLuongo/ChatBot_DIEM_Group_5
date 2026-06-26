@@ -156,14 +156,13 @@ class WebExplorer:
 
 
     def _build_strategies(self, query: str) -> List[Tuple[str, str, int]]:
-        primary_domain = "diem.unisa.it"
-        sites_or_query = " OR ".join([f"site:{domain}" for domain in self.domains])
+        # Rimuoviamo l'operatore 'site:' che rompe spesso le query automatizzate.
+        # Aggiungiamo contesto testuale ("unisa", "diem") e chiediamo 25 risultati (max_res).
+        # Il filtro in locale penserà a scartare i siti non ufficiali.
         strategies = [
-            ("Prioritaria sul Dipartimento", f"{query} site:{primary_domain}", 10),
-            ("Combinata sui Domini Secondari", f"{query} {sites_or_query}", 10)
+            ("Ricerca Organica DIEM", f"{query} dipartimento DIEM unisa", 25),
+            ("Ricerca Organica UNISA", f"{query} università degli studi di salerno", 25)
         ]
-        for domain in self.domains:
-            strategies.append((f"Singola su {domain}", f"{query} site:{domain}", 10))
         return strategies
 
     def explore_and_retrieve(self, search_query: str, target_score: float = 5.0, debug: bool = False, max_timeout_sec: float = 120.0, min_score: float = 0.6):

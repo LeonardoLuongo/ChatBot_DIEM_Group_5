@@ -109,7 +109,6 @@ class GoogleSearch(BaseSearchEngine):
             try:
                 # Usiamo selettori molto più larghi (h3 per i titoli, a[data-ved] per i link) e state="attached"
                 page.wait_for_selector("div#search, div#rso, form#captcha-form, #recaptcha, div#topstuff, h3, a[data-ved]", state="attached", timeout=5000)
-                page.wait_for_timeout(1000)
             except Exception:
                 # Se va in timeout, controlliamo se ci sono comunque link. Se ci sono, non stampiamo l'allarme falso.
                 if page.locator("a[href]").count() == 0:
@@ -229,7 +228,6 @@ class BingSearch(BaseSearchEngine):
             try:
                 # Aggiunti selettori universali (main, h2 per i titoli) e timeout ridotto
                 page.wait_for_selector("li.b_algo, div#b_captcha, iframe[src*='captcha'], .b_no, main, h2", state="attached", timeout=5000)
-                page.wait_for_timeout(1000)
             except Exception:
                 if page.locator("a[href]").count() == 0:
                     print("  ⚠️ [TIMEOUT Bing] Selettori non trovati e nessun link presente.")

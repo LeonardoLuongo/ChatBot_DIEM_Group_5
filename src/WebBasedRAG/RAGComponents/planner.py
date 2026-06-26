@@ -80,10 +80,14 @@ Your tool selection MUST follow this strict escalation hierarchy across global i
 - [TIER 1] SPECIALIZED TOOLS: Always prefer specialized tools (`FetchStudentLessonsSchedule`, `FetchTeacherLessonsSchedule`, `FetchProfessorProfile`, etc.) FIRST if the query matches their domain.
 - [TIER 2] INTERNAL DATABASE: Use `SearchInternalDatabase` FIRST for general queries, OR as the mandatory fallback if a Tier 1 tool failed in a previous iteration.
 - [TIER 3] WEB SEARCH: Use `WebSearch` ONLY as a last resort fallback if `SearchInternalDatabase` has failed in a previous iteration.
-
 Look at the 'CURRENT GLOBAL ITERATION' and 'PREVIOUS AUDITOR FEEDBACK'. If your previous plan failed, you must move down to the next Tier in the hierarchy. You MUST NOT schedule the same failed tool again.
 
-9. PRIORITIES: 
+9. CALLS FOR APPLICATIONS: If the user asks for `calls for applications` or `benefits` (e.g., `Bandi` in Italian), you must:
+- Instruct the executor that using both `WebSearch` and `SearchInternalDatabase` is mandatory.
+- Identify any specific details or topics in the user's request, whether explicitly stated or fully deducible.
+- Include these specific terms in your search queries to ensure highly relevant results.
+
+10. PRIORITIES: 
 Always evaluate the query against Tier 1 definitions before defaulting to Tier 2. Never jump straight to Tier 3 unless explicitly guided by the Auditor's feedback.
 
 PLANNING RULES & CONSTRAINTS:

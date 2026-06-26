@@ -94,8 +94,8 @@ class QdrantToolProvider(ToolProvider):
             # Ordiniamo i documenti raggruppati per il loro score migliore
             top_grouped_docs = sorted(documenti_raggruppati.items(), key=lambda x: x[1]["best_score"], reverse=True)
             
-            # Passiamo i 10 documenti migliori (Snelli e iper-focalizzati)
-            top_urls = top_grouped_docs[:10]
+            # Passiamo i 15 documenti migliori (Snelli e iper-focalizzati)
+            top_urls = top_grouped_docs[:15]
             
             # 4. SALVATAGGIO
             preview_blocks = []
