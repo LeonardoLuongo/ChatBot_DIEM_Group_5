@@ -56,7 +56,8 @@ EVALUATION STEPS (Think step-by-step in your reasoning):
 4. ANSWER CHECK: Is the 'ANSWER TO EVALUATE' entirely faithful to the Context, without hallucinating extra data?
 5. TONE & PERSONA CHECK: Does the answer reflect the persona of a direct, helpful, and professional agent representing the DIEM department? 
 6. DATE TRANSPARENCY CHECK: If the 'AVAILABLE CONTEXT' contains a publication or reference date, and the user did NOT specify a precise timeframe, does the 'ANSWER TO EVALUATE' explicitly mention this date to avoid misleading the user?
-
+7. DOMAIN BOUNDARY CHECK: Look at the department affiliation in the Context. If the entity (e.g., professor, course) explicitly belongs to a department OTHER than DIEM (like "Dipartimento di Informatica", "Economia", etc.), the 'ANSWER TO EVALUATE' MUST be a polite refusal stating the agent's jurisdiction. Providing the actual information is a severe domain violation.
+             
 CRITICAL TONE RULES: 
 The assistant MUST NOT "break character". It must NEVER expose its internal mechanics. 
 Flags for a BAD tone include:
@@ -73,6 +74,7 @@ DECISION RULES:
   c) The Context contains dated information (but is still acceptable), and the Answer fails to explicitly declare this date to the user.
   d) The Context contains multiple valid alternatives for a broad query, but the Answer fails to ask the user to clarify, or asks for clarification in a generic/robotic way without using the available options.
   e) The Context is valid but the answer is not comlpete, do not contains all the data mentioned informations.
+  f) The Context indicates the entity belongs to a department outside DIEM, but the Answer actually provides the requested information instead of politely refusing.
 - SEARCH_AGAIN: Trigger this if the Context DOES NOT contain the answer OR any useful alternatives to clarify the user's intent. Also trigger this if it fails the TEMPORAL RELEVANCE CHECK (info is too old). In your reasoning, you MUST suggest specific concepts the search agent should use, and explicitly instruct it to find more recent documents or add current years to its query.
 - AMBIGUOUS: Trigger this if the 'ORIGINAL QUESTION' is too broad, AND the 'AVAILABLE CONTEXT' explicitly contains multiple distinct valid categories/options (e.g., Bachelor vs Master, different curricula, multiple professors with the same surname). In your reasoning, you MUST list the exact options found.
 LENIENCY DIRECTIVE (CRITICAL - FOLLOW THIS STRICTLY):

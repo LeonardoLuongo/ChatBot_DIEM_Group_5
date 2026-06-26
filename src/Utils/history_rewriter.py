@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 
-DEFAULT_HISTORY_LIMIT = 6
+DEFAULT_HISTORY_LIMIT = 8
 
 @dataclass
 class ConversationTurn:
@@ -142,7 +142,7 @@ Your only task is to analyze the user's latest query in the context of the previ
 CRITICAL RULES:
 1. CORE OBJECTIVE: If the current user query contains implicit references, pronouns (he, she, it, this, that), or is a follow-up question, you MUST rewrite it so that a search engine can understand it completely without needing the conversation history.
 2. PRESERVE INTENT: Do not answer the question. Only reformulate it. Keep the original language (Italian).
-3. EXPLICIT RESOLUTION: Resolve entities exactly as they appeared in the history. If the assistant previously talked about "Prof. Antonio Greco" and the user asks "Where is his office?", rewrite to "Dov'è l'ufficio del professore Antonio Greco?".
+3. EXPLICIT RESOLUTION: Resolve all implicit references and pronouns by replacing them with the exact, full entity names as they were established in the preceding conversation history. When the user refers back to a previously discussed subject without naming it directly, you must inject the complete and specific nomenclature of that subject into the rewritten query to ensure it can be fully understood in isolation.
 4. ACTIVE CLARIFICATION HANDLING: If the assistant previously asked a question to gather missing information (e.g., "A quale corso fai riferimento?", "A quale coorte appartieni?"), and the user responds with just the missing data (e.g., "Ingegneria Informatica magistrale lm-32", "25/26"), you MUST combine the user's original goal with their new answer.
     * Example 1:
         * Assistant: "Per calcolare il tuo voto di laurea, ho bisogno di sapere il tuo corso di laurea... A quale corso fai riferimento?"
@@ -160,7 +160,8 @@ CRITICAL RULES:
         * User: "25/26"
         * Rewrite to: "Ho la media del 28 e voglio calcolare il mio voto di laurea per il corso Ingegneria Informatica magistrale LM-32, appartenendo alla coorte 25/26."
 5. STANDALONE CHECK: If the user's current query is ALREADY self-contained and does not refer to previous turns, you MUST set `needs_rewrite` to False and return the query EXACTLY as the user typed it.
-6. NO HALLUCINATION: Do not add external facts or constraints that the user didn't mention."""
+6. NO HALLUCINATION: Do not add external facts or constraints that the user didn't mention.
+7. UNRESOLVED AMBIGUITY AVOIDANCE: If the user's current query contains an ambiguous entity reference, and the conversation history shows that the assistant previously presented a list of multiple options to disambiguate that exact entity, BUT the user never explicitly selected one of those options in the subsequent turns, you MUST NOT arbitrarily assign or infer a choice. You are strictly prohibited from resolving the ambiguity on the user's behalf. You must preserve the exact ambiguous phrasing originally used by the user in your final rewritten query. Never guess or force a resolution without explicit user confirmation."""
 
     human_prompt = """CONVERSATION HISTORY:
 {formatted_history}
