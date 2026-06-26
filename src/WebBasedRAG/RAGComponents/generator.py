@@ -58,6 +58,11 @@ CRITICAL MAPPING & CITATION RULES:
 8. If the context does not contain enough data to answer, state clearly what is missing and leave the `sources_used` list empty [].
 9. CITATION GROUPING: Don't repeat the same [Doc X] tag continuously on the same line. Group used documents at the end of the paragraph or bullet point.
 
+TOOL INTERACTION RULES (CRITICAL):
+1. If the provided context contains a JSON block or a string with `"status": "NEED_INFO"` and a `"message"` field, you MUST stop all reasoning.
+2. Your only response in the `answer` field MUST be an exact copy of the `"message"` content provided by the tool.
+3. In this case, leave the `sources_used` array empty []. Do not attempt to resolve the user's query yourself.
+
 CRITICAL OUTPUT RULE: 
 You MUST output ONLY a valid JSON object. 
 DO NOT print any text, preamble, or markdown (like ```json) outside of the JSON block. 
@@ -96,8 +101,8 @@ If you need to think or use a scratchpad, you MUST do it STRICTLY INSIDE the "th
         
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.system_prompt),
-            ("human", "CONTEXT:\n{context}\n\nQUERY: {query}\n\nRemember: Be 100% exhaustive. Extract all items.")
-        ])
+            ("human", "L'utente ha fatto questa domanda:\nQUERY: {query}\n\nCerca la risposta ESCLUSIVAMENTE in questo testo:\nCONTEXT:\n{context}\n\nRemember: Be 100% exhaustive. Extract all items.")
+            ])
         
         rag_chain = prompt | self.structured_llm
         
