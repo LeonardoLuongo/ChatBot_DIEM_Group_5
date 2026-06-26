@@ -3,3 +3,4 @@ VectorDB/
 guardrails_log.jsonl
 session_history.jsonl
 .gitingestignore
+**/main_qa_search.py
