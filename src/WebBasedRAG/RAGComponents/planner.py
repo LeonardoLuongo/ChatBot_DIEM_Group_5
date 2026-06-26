@@ -74,7 +74,7 @@ CRITICAL TOOL ROUTING RULES (Memorize the difference between these tools):
 4. OFFICE HOURS & CONTACTS (RICEVIMENTO E CONTATTI): If the user asks for a professor's OFFICE HOURS / RECEPTION HOURS, Contact Info, Office Location, or Notice Board, you MUST plan a step using `FetchProfessorProfile`.
 5. INCOMPLETE NAMES: If you have only a surname or an incomplete name, plan `SearchProfessorDirectory` FIRST, then `FetchProfessorProfile`.
 6. INTERNAL KNOWLEDGE BASE (PRIMARY SEARCH): If the user asks for general information, rules, CFU requirements, thesis regulations, historical facts, or general knowledge, you MUST plan a step using `SearchInternalDatabase` FIRST.
-7. WEB SEARCH (FALLBACK & LIVE DATA): Use `WebSearch` as a Fallback if `SearchInternalDatabase` fails to find an answer.
+7. WEB SEARCH (FALLBACK & LIVE DATA): Use `WebSearch` as a Fallback if `SearchInternalDatabase` fails to find an answer or simply as a way to get with higher probability the correct information.
 8. MATHEMATICAL CALCULATIONS: Use the `Calculator` tool for ANY mathematical operation.
 9. THE RETRY RULE & FALLBACK HIERARCHY (CRITICAL): 
 Your tool selection MUST follow this strict escalation hierarchy across global iterations:

@@ -77,11 +77,14 @@ class GoogleSearch(BaseSearchEngine):
     def __init__(self, browser: BrowserEngine):
         super().__init__()
         self.browser = browser
+        self.extracted_snippets = {} # <-- NUOVO
 
     def search(self, query: str, max_results: int) -> Tuple[List[str], Dict[str, str]]:
         print(f"\n 🕵️‍♂️ [GOOGLE SNIPER] Avvio ricerca per: '{query}' (Target: {max_results})")
         urls = []
         hash_map = {}
+        self.extracted_snippets.clear() # <-- NUOVO
+        
         try:
             self._enforce_rate_limit()
             page, sb = self.browser.get_page()
@@ -133,6 +136,82 @@ class GoogleSearch(BaseSearchEngine):
                     print(" ✅ CAPTCHA bypassato e risultati caricati con successo!")
                 except Exception as ce:
                     print(f" ❌ Fallita risoluzione CAPTCHA: {ce}")
+            # =========================================================
+            # NUOVO: ESTRAZIONE AI OVERVIEW (SGE) ROBUSTA
+            # =========================================================
+            try:
+                print(" 🧠 Controllo presenza di risposte rapide o AI in cima alla pagina...")
+                page.wait_for_timeout(2000) # L'AI Overview ci mette un po' a generarsi
+                
+                ai_text = page.evaluate("""() => {
+                    let collected = "";
+                    let seenTexts = new Set();
+                    
+                    // 1. Selettori noti (inclusi quelli dal tuo HTML per la AI Overview)
+                    let selectors = [
+                        '.n6owBd', '.WYczDe', '.LGOjhe', '.hgKElc', 
+                        '[data-attrid="wa:/description"]', '.kno-rdesc', 
+                        'block-component'
+                    ];
+                    
+                    for (let sel of selectors) {
+                        let elements = document.querySelectorAll(sel);
+                        for (let el of elements) {
+                            // Ignoriamo elementi nascosti
+                            if (el.offsetParent === null) continue;
+                            
+                            // CLONIAMO IL NODO per non distruggere la pagina originale
+                            let clone = el.cloneNode(true);
+                            
+                            // RIMUOVIAMO LA SPAZZATURA UI (Bottoni, dropdown, link citazioni)
+                            let garbage = clone.querySelectorAll('button, a.PMDqCb, .RUZVbb, .Q8Wngd, svg, img');
+                            garbage.forEach(g => g.remove());
+                            
+                            let t = clone.innerText.trim();
+                            
+                            // Filtriamo testi troppo brevi o avvisi sui cookie
+                            if (t.length > 40 && !t.includes("Accetta tutto")) {
+                                if (!seenTexts.has(t)) {
+                                    collected += t + "\\n\\n";
+                                    seenTexts.add(t);
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. FALLBACK STRUTTURALE (Se Google cambia di nuovo tutte le classi)
+                    if (collected.length < 50) {
+                        // L'AI Overview è quasi sempre il primo elemento in assoluto dei risultati
+                        let firstBlock = document.querySelector('#rso > div:first-child, #search > div > div:first-child');
+                        if (firstBlock) {
+                            // Clone e pulizia anche qui
+                            let clone = firstBlock.cloneNode(true);
+                            let garbage = clone.querySelectorAll('button, a, svg, img, cite');
+                            garbage.forEach(g => g.remove());
+                            
+                            let textNodes = clone.querySelectorAll('div, p, span');
+                            for (let node of textNodes) {
+                                // Prendiamo solo i blocchi che hanno testo diretto
+                                let t = node.innerText.trim();
+                                if (t.length > 50 && !seenTexts.has(t)) {
+                                    collected += t + "\\n\\n";
+                                    seenTexts.add(t);
+                                }
+                            }
+                        }
+                    }
+                    
+                    return collected.trim();
+                }""")
+                
+                if ai_text:
+                    print(f" 🤖 [GOOGLE AI] Trovato riassunto integrato ({len(ai_text)} char). Aggiunto alle fonti!")
+                    virtual_url = f"https://diem.unisa.it/search-sge?q={urllib.parse.quote(query)}#google-ai-overview"
+                    self.extracted_snippets[virtual_url] = f"Google AI Overview / Risposta Rapida:\n\n{ai_text}"
+                    urls.insert(0, virtual_url) # Lo mettiamo per primo tra i risultati
+                    hash_map[virtual_url] = virtual_url
+            except Exception as e:
+                print(f" ⚠️ Errore estrazione Google AI: {e}")
 
             # =========================================================
             # STRATEGIA ESTRAZIONE: "VACUUM & FILTER"
@@ -374,11 +453,13 @@ class HybridSearchOrchestrator:
     def __init__(self, engines: List['BaseSearchEngine']):
         # Riceve solo la lista dei motori (es. Google, Bing, Searx)
         self.engines = engines
+        self.extracted_snippets = {} # <-- NUOVO: Cache per gli snippet AI
 
     def search_all(self, query: str, max_results: int) -> Tuple[List[str], Dict[str, str]]:
         """Cascata intelligente dinamica con logica a riempimento (Bucket Fill)."""
         urls = []
         hash_map = {}
+        self.extracted_snippets.clear() # <-- NUOVO: Svuota la cache ad ogni ricerca
 
         for i, engine in enumerate(self.engines):
             engine_name = engine.__class__.__name__.replace('Search', '')
@@ -398,6 +479,10 @@ class HybridSearchOrchestrator:
             # --- ESECUZIONE RICERCA (usa la query grezza coi Dorks passata dal WebExplorer) ---
             engine_urls, engine_map = engine.search(query, needed)
             
+            # <-- NUOVO: Raccoglie gli snippet estratti dal motore
+            if hasattr(engine, 'extracted_snippets'):
+                self.extracted_snippets.update(engine.extracted_snippets)
+                
             for u in engine_urls:
                 if u not in urls:
                     urls.append(u)
