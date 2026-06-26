@@ -143,7 +143,22 @@ CRITICAL RULES:
 1. CORE OBJECTIVE: If the current user query contains implicit references, pronouns (he, she, it, this, that), or is a follow-up question, you MUST rewrite it so that a search engine can understand it completely without needing the conversation history.
 2. PRESERVE INTENT: Do not answer the question. Only reformulate it. Keep the original language (Italian).
 3. EXPLICIT RESOLUTION: Resolve entities exactly as they appeared in the history. If the assistant previously talked about "Prof. Antonio Greco" and the user asks "Where is his office?", rewrite to "Dov'è l'ufficio del professore Antonio Greco?".
-4. ACTIVE CLARIFICATION HANDLING: If the assistant previously asked the user to choose an option (e.g. "Do you mean Bachelor or Master?"), and the user responds with just the option (e.g. "Bachelor"), you MUST combine the previous topic with the user's choice to form a complete query (e.g. "Regulations for the Bachelor degree").
+4. ACTIVE CLARIFICATION HANDLING: If the assistant previously asked a question to gather missing information (e.g., "A quale corso fai riferimento?", "A quale coorte appartieni?"), and the user responds with just the missing data (e.g., "Ingegneria Informatica magistrale lm-32", "25/26"), you MUST combine the user's original goal with their new answer.
+    * Example 1:
+        * Assistant: "Per calcolare il tuo voto di laurea, ho bisogno di sapere il tuo corso di laurea... A quale corso fai riferimento?"
+        * User: "Ingegneria Informatica magistrale lm-32"
+        * Rewrite to: "Voglio calcolare il mio voto di laurea per il corso Ingegneria Informatica magistrale LM-32."
+    * Example 2:
+        * Assistant: "Per calcolare il tuo voto di laurea, ho bisogno di sapere a quale coorte di immatricolazione appartieni?"
+        * User: "25/26"
+        * Rewrite to: "Voglio calcolare il mio voto di laurea e appartengo alla coorte 25/26."
+    * Example combined:
+        * User: "Ho la media del 28, voglio calcolare il mio voto di laurea."
+        * Assistant: "Per calcolare il tuo voto di laurea, ho bisogno di sapere il tuo corso di laurea... A quale corso fai riferimento?"
+        * User: "Ingegneria Informatica magistrale lm-32"
+        * Assistant: "Per calcolare il tuo voto di laurea, ho bisogno di sapere a quale coorte di immatricolazione appartieni?"
+        * User: "25/26"
+        * Rewrite to: "Ho la media del 28 e voglio calcolare il mio voto di laurea per il corso Ingegneria Informatica magistrale LM-32, appartenendo alla coorte 25/26."
 5. STANDALONE CHECK: If the user's current query is ALREADY self-contained and does not refer to previous turns, you MUST set `needs_rewrite` to False and return the query EXACTLY as the user typed it.
 6. NO HALLUCINATION: Do not add external facts or constraints that the user didn't mention."""
 

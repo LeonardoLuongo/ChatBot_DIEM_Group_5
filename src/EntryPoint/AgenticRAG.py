@@ -113,6 +113,8 @@ from WebBasedRAG.RAGComponents.tools.providers.professors_provider import Profes
 from WebBasedRAG.RAGComponents.tools.providers.math_provider import MathToolProvider
 from WebBasedRAG.RAGComponents.tools.services.qdrant_service import QdrantService
 from WebBasedRAG.RAGComponents.tools.providers.qdrant_provider import QdrantToolProvider
+from WebBasedRAG.RAGComponents.tools.services.graduation_grade_service import GraduationGradeService
+from WebBasedRAG.RAGComponents.tools.providers.graduation_grade_provider import GraduationGradeToolProvider
 
 import threading
 import requests
@@ -195,6 +197,7 @@ class AgenticRag:
             registry.register_provider(WebSearchToolProvider(self.explorer, self.session_state, debug_mode=True))
             registry.register_provider(ProfessorsToolProvider(ProfessorsService(), self.session_state, self.explorer))
             registry.register_provider(MathToolProvider(session_state=self.session_state))
+            registry.register_provider(GraduationGradeToolProvider(self.session_state))
             
             tools = registry.get_all_tools()
             

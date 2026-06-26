@@ -1,11 +1,18 @@
-# FILE: RAGComponents/session_state.py
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 
 class GlobalSessionState:
     def __init__(self, max_docs: int = 10):
+        # 1. Memoria per i Documenti RAG
         self.source_mapping: Dict[int, Dict[str, Any]] = {}
         self._doc_counter: int = 0
-        self.max_docs = max_docs
+        self.max_docs: int = max_docs
+        
+        # 2. Memoria per i Tool Multi-Turno
+        self._tool_memory: Dict[str, Any] = {}
+
+    # =========================================================
+    # GESTIONE CONTESTO E DOCUMENTI (RAG)
+    # =========================================================
 
     def prune_context(self, query: str, evaluator, threshold: float = 0.20) -> int:
         """
@@ -32,7 +39,7 @@ class GlobalSessionState:
             
         return len(keys_to_remove)
 
-    def add_source(self, url: str, title: str, testo_estratto: str, smart_url: str = None, score: float = 1.0, external_links: list = None) -> int:
+    def add_source(self, url: str, title: str, testo_estratto: str, smart_url: Optional[str] = None, score: float = 1.0, external_links: Optional[List] = None) -> int:
         self._doc_counter += 1
         doc_id = self._doc_counter
         
@@ -42,10 +49,9 @@ class GlobalSessionState:
             "titolo": title,
             "score": score,
             "testo": testo_estratto,
-            "external_links": external_links or [] # <-- Salvato qui!
+            "external_links": external_links or [] 
         }
 
-        
         # --- POLIZIA DEL CONTESTO (Eviction Policy) ---
         if len(self.source_mapping) > self.max_docs:
             # Ordiniamo per Score (crescente). A parità di score, usiamo il doc_id 
@@ -59,11 +65,25 @@ class GlobalSessionState:
         """Restituisce tutto il contesto accumulato per la risposta finale"""
         if not self.source_mapping:
             return ""
-        context_blocks = []
-        for doc_id, data in self.source_mapping.items():
-            context_blocks.append(data["testo"])
+        context_blocks = [data["testo"] for doc_id, data in self.source_mapping.items()]
         return "\n\n".join(context_blocks)
 
     def clear(self):
+        """Pulisce l'intera sessione (chiamato ad ogni nuova query o svuota chat)"""
         self.source_mapping.clear()
         self._doc_counter = 0
+        self._tool_memory.clear()
+
+    # =========================================================
+    # GESTIONE MEMORIA DEI TOOL (Multi-Turno)
+    # =========================================================
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._tool_memory.get(key, default)
+
+    def set(self, key: str, value: Any) -> None:
+        self._tool_memory[key] = value
+
+    def remove(self, key: str) -> None:
+        if key in self._tool_memory:
+            del self._tool_memory[key]
