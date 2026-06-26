@@ -86,26 +86,34 @@ Reply ONLY with a valid JSON object. Do NOT include any preamble, conversational
         # 3. La chain ora usa direttamente il LLM strutturato
         self.chain = self.prompt | self.structured_llm
 
-    def evaluate(self, query: str, context: str, answer: str, current_iter: int = 1, max_iter: int = 3) -> JudgeEvaluation:
+    def evaluate(self, query: str, context: str, answer: str, current_iter: int = 1, max_iter: int = 3, global_iter: int = 1, max_global_iter: int = 3) -> JudgeEvaluation:
         # Calcoliamo la data esatta in questo preciso istante
         current_dt = datetime.now().strftime("%A, %Y-%m-%d %H:%M:%S")
         
-        # --- LOGICA DI RILASSAMENTO PROGRESSIVO ---
-        if current_iter == 1:
-            leniency_rules = "STRICT MODE: You must enforce all tone, completeness, and temporal rules perfectly. Do not compromise."
-        elif current_iter < max_iter:
-            leniency_rules = "RELAXED MODE: Be more forgiving. Ignore minor tone violations (e.g., slightly robotic tone). If the core facts are correct and derived from the context, you MUST output PASS."
+        # --- LOGICA DI RILASSAMENTO TEMPORALE (Sui tentativi di ricerca globale) ---
+        if global_iter >= max_global_iter:
+            temporal_leniency = "CRITICAL TEMPORAL OVERRIDE: We are at the final search attempt. You MUST IGNORE the 'TEMPORAL RELEVANCE CHECK'. Accept older information (e.g., from past years) if nothing newer is present. DO NOT output SEARCH_AGAIN for outdated info, just ensure the answer explicitly states the year."
+        elif global_iter > 1:
+            temporal_leniency = "We have already tried searching once. You can be more forgiving with dates. Accept slightly older data if recent data isn't available."
         else:
-            leniency_rules = f"CRITICAL FINAL ATTEMPT ({current_iter}/{max_iter}): You MUST be extremely lenient. Accept partial or imperfect answers. PASS anything that is not a pure hallucination. Ignore tone and style completely. Do NOT output REWRITE."
+            temporal_leniency = "STRICT TEMPORAL MODE: Enforce the 'TEMPORAL RELEVANCE CHECK' perfectly. If data is heavily outdated, trigger SEARCH_AGAIN."
 
-        print(f"   ⚖️ [GIUDICE] Valutazione in corso... (Modalità: Iterazione {current_iter}/{max_iter})")
+        # --- LOGICA DI RILASSAMENTO RISPOSTA (Sui tentativi di riscrittura) ---
+        if current_iter == 1:
+            leniency_rules = f"STRICT MODE: You must enforce all tone and completeness rules perfectly. {temporal_leniency}"
+        elif current_iter < max_iter:
+            leniency_rules = f"RELAXED MODE: Be more forgiving. Ignore minor tone violations. {temporal_leniency}"
+        else:
+            leniency_rules = f"CRITICAL FINAL REWRITE ATTEMPT ({current_iter}/{max_iter}): You MUST be extremely lenient. Accept partial or imperfect answers. PASS anything that is not a pure hallucination. Ignore tone and style completely. {temporal_leniency}"
+
+        print(f"   ⚖️ [GIUDICE] Valutazione in corso... (Global Iter: {global_iter}/{max_global_iter} | Rewrite Iter: {current_iter}/{max_iter})")
         
         callbacks = [langfuse_handler] if os.getenv("IS_LANGFUSE_ENABLED") else []
         
         try:
             return self.chain.invoke({
                 "current_datetime": current_dt,
-                "leniency_rules": leniency_rules, # Passiamo la direttiva di clemenza
+                "leniency_rules": leniency_rules, 
                 "query": query, 
                 "context": context, 
                 "answer": answer
