@@ -88,6 +88,7 @@ class EasyCourseToolProvider(ToolProvider):
                 "Fetches the list of courses taught by a specific Teacher (Docente). "
                 "It supports historical data: pass the user's natural language request directly to this tool, "
                 "including any specific year, semester, or date requested by the user."
+                "CRITICAL RULE: This tool can return only a semester per call. So if you must retrieve the list of courses taught by a specific Teacher for a whole year, you should call this tool two times: one for the first semester and one for the second semester."
             ),
             args_schema=TeacherCoursesInput
         )

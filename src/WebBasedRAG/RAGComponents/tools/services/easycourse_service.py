@@ -47,8 +47,8 @@ class SceltaMenu(BaseModel):
     scelta_html_value: str = Field(description="The EXACT HTML value extracted from the provided dictionary.")
     motivo: str = Field(description="Brief reason for the choice.")
 
-DEBUG = True
-TIMEOUT = 900
+DEBUG = False
+TIMEOUT = 1000
 class EasyCourseService:
     """Service dedicato all'estrazione orari da EasyCourse Unisa tramite Playwright e LLM (Thick Tool)."""
 

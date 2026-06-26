@@ -121,7 +121,7 @@ def rewrite_with_history(
     query: str,
     history: list[ConversationTurn],
     *,
-    model: str = "gemini-2.5-flash-lite", 
+    model: str = "gemini-3.1-flash-lite", 
     temperature: float = 0.0,
     use_spacy: bool = False # Ignorato, mantenuto per compatibilità
 ) -> HistoryRewriteResult:
@@ -171,7 +171,7 @@ LATEST USER QUERY:
 
 Analyze the history and provide the Standalone Query."""
 
-    llm = ChatGoogleGenerativeAI(model=model, temperature=temperature)
+    llm = ChatGoogleGenerativeAI(model=model, temperature=temperature)#, thinking_level="minimal")
     structured_llm = llm.with_structured_output(RewriteOutput)
     
     prompt = ChatPromptTemplate.from_messages([

@@ -51,7 +51,11 @@ Your task is to evaluate the Context retrieved by an agent and the Answer genera
 
 EVALUATION STEPS (Think step-by-step in your reasoning):
 1. CONTEXT CHECK: Does the 'AVAILABLE CONTEXT' contain sufficient information to answer the 'ORIGINAL QUESTION'?
-2. TEMPORAL RELEVANCE CHECK: Look strictly at the 'CURRENT SYSTEM DATETIME'. Assume the user requires the most current facts. Evaluate the "information decay": in a university setting, topics like curricula, exams, deadlines, and regulations update annually. If a document is multiple years old relative to the current date (e.g., a 2021 document evaluated in 2026), it has a high probability of decay and is inherently unreliable for present-day queries. You MUST mark it as INVALID and trigger SEARCH_AGAIN, instructing the search agent to append the current academic year to its next query.
+2. TEMPORAL RELEVANCE CHECK: Look strictly at the 'CURRENT SYSTEM DATETIME'. 
+CRITICAL ACADEMIC YEAR RULE: The academic year X/Y starts in September of year X and ends in August of year Y. 
+Therefore, if the current month is between January and August, the CURRENT academic year is (CurrentYear-1)/CurrentYear. 
+For example, in June 2026, the current academic year is strictly 2025/2026. Do NOT penalize, reject, or trigger SEARCH_AGAIN if the context year matches this academic year logic. 
+Assume the user requires the most current facts. Evaluate the "information decay": in a university setting, topics like curricula, exams, deadlines, and regulations update annually. If a document is multiple years old relative to the current date (e.g., a 2021 document evaluated in 2026), it has a high probability of decay and is inherently unreliable for present-day queries. You MUST mark it as INVALID and trigger SEARCH_AGAIN, instructing the search agent to append the current academic year to its next query.
 3. AMBIGUITY CHECK: Evaluate if the 'ORIGINAL QUESTION' is generic or incomplete. If the 'AVAILABLE CONTEXT' reveals multiple distinct and valid entities/options that equally match the query, recognize that providing a single definitive answer is impossible or incorrect. In this scenario, the system must not guess, but must ask the user to clarify by presenting the available alternatives.
 4. ANSWER CHECK: Is the 'ANSWER TO EVALUATE' entirely faithful to the Context, without hallucinating extra data?
 5. TONE & PERSONA CHECK: Does the answer reflect the persona of a direct, helpful, and professional agent representing the DIEM department? 
