@@ -1,3 +1,4 @@
+import re
 import os
 import asyncio
 import concurrent.futures
@@ -73,6 +74,37 @@ class ProfessorsService:
                 
                 if not testo_risultati or testo_risultati.strip() == "":
                     return f"Nessun risultato trovato per la query: '{query_ricerca}'"
+                
+                professors = testo_risultati.split("\t\n")[1:]
+                testo_risultati = ""
+                for prof in professors:
+                    name_and_url = prof.replace("'", "").replace("\n\xa0\xa0", ",").replace("\n", "").split(",")
+                    if len(name_and_url) > 2:
+                        print("Error: professor record contains more than name and link.")
+                    fullname, link = name_and_url[:2]
+                    fullname = fullname.split(" ")
+                    
+                    name, surname = "", ""
+                    no_ws_name = link.split("/")[-1].split(".")[0]
+                    no_ws_surname = link.split("/")[-1].split(".")[1]
+                    for part_of_fn in fullname:
+                        if part_of_fn.lower().replace("'", "") in no_ws_name:
+                            name += part_of_fn
+                        elif part_of_fn.lower().replace("'", "") in no_ws_surname:
+                            surname += part_of_fn
+                        else:
+                            print(f"Error: '{part_of_fn}' is not in the professor name, something is wrong.")
+
+
+                    professor_profile = self.get_professor_profile(name, surname)
+                    match = re.search(r'(Dipartimento di\s+[^|\n]+)', professor_profile)
+
+                    if match:
+                        dep = match.group(1).strip()
+                        testo_risultati += name + " " + surname + " | " + dep +  "\n" + link + "\n"
+                    else:
+                        testo_risultati += name + " " + surname + " | " + "*il dipartimento non riportato sul sito*" +  "\n" + link + "\n"
+
                 return testo_risultati
             except Exception as e:
                 return f"Si è verificato un errore durante la ricerca: {str(e)}"
@@ -86,3 +118,8 @@ class ProfessorsService:
 
     def search_professor_directory(self, query_ricerca: str) -> str:
         return self._run_in_isolated_thread(self._cerca_docente_playwright_isolato, query_ricerca)
+    
+
+# ps = ProfessorsService()
+# res = ps._cerca_docente_playwright_isolato("Greco")
+# print(res)
