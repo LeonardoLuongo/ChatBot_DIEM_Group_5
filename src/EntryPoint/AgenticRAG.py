@@ -486,7 +486,7 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
             chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None))
             with gr.Row():
                 # Definiamo i componenti
-                msg = gr.Textbox(placeholder="Fai una domanda...", container=False, scale=5, autofocus=True)
+                msg = gr.Textbox(placeholder="Fai una domanda...", container=False, scale=5, autofocus=True,  html_attributes=gr.InputHTMLAttributes(autocorrect="off", spellcheck=False))
                 submit_btn = gr.Button("Invia", variant="primary", scale=1)
             clear_btn = gr.Button("🗑️ Svuota Chat", variant="stop", size="sm")
 
