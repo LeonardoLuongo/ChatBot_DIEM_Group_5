@@ -329,9 +329,7 @@ INSTRUCTIONS:
                         context, 
                         final_result.answer, 
                         current_iter=rewrite_iter + 1, 
-                        max_iter=3,
-                        global_iter=global_iter + 1,
-                        max_global_iter=3
+                        max_iter=3
                     )
 
                     eval_color = "#22c55e" if evaluation.decision == "PASS" else "#ef4444"

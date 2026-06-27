@@ -80,9 +80,6 @@ DECISION RULES:
 - SEARCH_AGAIN: Trigger this if the Context DOES NOT contain the answer AND does not contain any useful alternatives to clarify the user's intent. Also trigger this if it fails the TEMPORAL RELEVANCE CHECK. In your reasoning, suggest specific concepts the search agent should use.  CRITICAL: If the context is missing the final answer BUT contains distinct options to clarify a broad query, DO NOT trigger SEARCH_AGAIN. You MUST trigger AMBIGUOUS.
 - AMBIGUOUS: Trigger this decision ONLY IF the 'ORIGINAL QUESTION' is broad/generic AND the 'AVAILABLE CONTEXT' explicitly provides multiple distinct valid categories/options to narrow down the query. This has ABSOLUTE PRIORITY over SEARCH_AGAIN. Do not instruct the system to blindly search for all possibilities. Instead, stop the execution and ask the user to clarify using the found options. In your 'reasoning', you MUST explicitly list the distinct options found.
 
-LENIENCY DIRECTIVE (CRITICAL - FOLLOW THIS STRICTLY):
-{leniency_rules}
-
 CRITICAL OUTPUT RULE:
 Reply ONLY with a valid JSON object. Do NOT include any preamble, conversational text, or markdown code blocks (like ```json). All your reasoning must go inside the "reasoning" JSON field."""),
             ("human", "ORIGINAL QUESTION: {query}\n\nAVAILABLE CONTEXT:\n{context}\n\nANSWER TO EVALUATE:\n{answer}")
@@ -91,34 +88,17 @@ Reply ONLY with a valid JSON object. Do NOT include any preamble, conversational
         # 3. La chain ora usa direttamente il LLM strutturato
         self.chain = self.prompt | self.structured_llm
 
-    def evaluate(self, query: str, context: str, answer: str, current_iter: int = 1, max_iter: int = 3, global_iter: int = 1, max_global_iter: int = 3) -> JudgeEvaluation:
+    def evaluate(self, query: str, context: str, answer: str, current_iter: int = 1, max_iter: int = 3) -> JudgeEvaluation:
         # Calcoliamo la data esatta in questo preciso istante
         current_dt = datetime.now().strftime("%A, %Y-%m-%d %H:%M:%S")
-        
-        # --- LOGICA DI RILASSAMENTO TEMPORALE (Sui tentativi di ricerca globale) ---
-        if global_iter >= max_global_iter:
-            temporal_leniency = "CRITICAL TEMPORAL OVERRIDE: We are at the final search attempt. You MUST IGNORE the 'TEMPORAL RELEVANCE CHECK'. Accept older information (e.g., from past years) if nothing newer is present. DO NOT output SEARCH_AGAIN for outdated info, just ensure the answer explicitly states the year."
-        elif global_iter > 1:
-            temporal_leniency = "We have already tried searching once. You can be more forgiving with dates. Accept slightly older data if recent data isn't available."
-        else:
-            temporal_leniency = "STRICT TEMPORAL MODE: Enforce the 'TEMPORAL RELEVANCE CHECK' perfectly. If data is heavily outdated, trigger SEARCH_AGAIN."
 
-        # --- LOGICA DI RILASSAMENTO RISPOSTA (Sui tentativi di riscrittura) ---
-        if current_iter == 1:
-            leniency_rules = f"STRICT MODE: You must enforce all tone and completeness rules perfectly. {temporal_leniency}"
-        elif current_iter < max_iter:
-            leniency_rules = f"RELAXED MODE: Be more forgiving. Ignore minor tone violations. {temporal_leniency}"
-        else:
-            leniency_rules = f"CRITICAL FINAL REWRITE ATTEMPT ({current_iter}/{max_iter}): You MUST be extremely lenient. Accept partial or imperfect answers. PASS anything that is not a pure hallucination. Ignore tone and style completely. {temporal_leniency}"
-
-        print(f"   ⚖️ [GIUDICE] Valutazione in corso... (Global Iter: {global_iter}/{max_global_iter} | Rewrite Iter: {current_iter}/{max_iter})")
+        print(f"   ⚖️ [GIUDICE] Valutazione in corso... (Rewrite Iter: {current_iter}/{max_iter})")
         
         callbacks = [langfuse_handler] if os.getenv("IS_LANGFUSE_ENABLED") else []
         
         try:
             return self.chain.invoke({
-                "current_datetime": current_dt,
-                "leniency_rules": leniency_rules, 
+                "current_datetime": current_dt, 
                 "query": query, 
                 "context": context, 
                 "answer": answer
