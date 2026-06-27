@@ -362,7 +362,7 @@ INSTRUCTIONS:
                 # Prendiamo la risposta formattata direttamente dall'LLM
                 final_text = final_result.answer
                 
-                # --- TRASFORMAZIONE IN LINK HTML ---
+                # --- B. TRASFORMAZIONE IN LINK HTML (CON FILTRO GOOGLE AI) ---
                 source_mapping = self.session_state.source_mapping
                 cited_docs_ordered = [] 
                 doc_to_new_index = {}   
@@ -374,22 +374,33 @@ INSTRUCTIONS:
                         real_doc_id = doc_id_str if doc_id_str in source_mapping else int(doc_id_str) if int(doc_id_str) in source_mapping else None
                             
                         if real_doc_id is not None:
+                            dati = source_mapping[real_doc_id]
+                            
+                            # --- FILTRO FONTI INDESIDERATE ---
+                            titolo_lower = dati.get('titolo', '').lower()
+                            if "google ai" in titolo_lower or "risposta rapida" in titolo_lower or "overview" in titolo_lower:
+                                return "" # Restituisce stringa vuota: il tag [ X ] scompare dal testo!
+                            # ---------------------------------
+                            
                             if real_doc_id not in doc_to_new_index:
                                 cited_docs_ordered.append(real_doc_id)
                                 doc_to_new_index[real_doc_id] = len(cited_docs_ordered)
                             
                             new_idx = doc_to_new_index[real_doc_id]
-                            dati = source_mapping[real_doc_id]
                             url = dati.get('smart_url', dati.get('url', '#'))
                             
-                            # Formatta il link come richiesto: [ N ] sottolineato e colorato
-                            return f" <a href='{url}' target='_blank' style='text-decoration: underline; color: #fb923c;'><b>[ {new_idx} ]</b></a>"
+                            # Formato richiesto: Tag <sup> per l'apice
+                            return f"<sup style='margin-left: 2px;'><a href='{url}' target='_blank' style='text-decoration: none; color: #fb923c; font-weight: bold;'>[{new_idx}]</a></sup>"
                         
                         return match.group(0)
 
                     # Intercetta i [ X ] generati dall'LLM
                     pattern = re.compile(r'\[\s*(\d+)\s*\]')
                     final_text = pattern.sub(replace_citation, final_text)
+                    
+                    # Pulisce eventuali spazi doppi lasciati dalla rimozione del tag invisibile
+                    final_text = re.sub(r'\s+', ' ', final_text).strip()
+
 
                 # --- COSTRUZIONE UI E BIBLIOGRAFIA ---
                 testo_ui = f"{final_text}\n\n"
@@ -483,7 +494,7 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
 
     with gr.Row():
         with gr.Column(scale=7):
-            chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None))
+            chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None), autoscroll=False,  elem_id="diem_chatbot")
             with gr.Row():
                 # Definiamo i componenti
                 msg = gr.Textbox(placeholder="Fai una domanda...", container=False, scale=5, autofocus=True,  html_attributes=gr.InputHTMLAttributes(autocorrect="off", spellcheck=False))
@@ -548,6 +559,29 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
                 print(" ✅ History fisica svuotata.")
         except Exception as e: print(f"Errore clear: {e}")
         return [], "<div style='color:#64748b;'>Sessione riavviata.</div>"
+
+    # ---------------------------------------------------------
+    # SCRIPT JS: Scrolla in basso SOLO all'invio della domanda
+    # ---------------------------------------------------------
+    scroll_js = """
+    function() {
+        setTimeout(function() {
+            var chatbot = document.querySelector('#diem_chatbot');
+            if (chatbot) {
+                // Cerca il contenitore con la barra di scorrimento di Gradio
+                var scrollContainer = chatbot.querySelector('.overflow-y-auto') || chatbot.querySelector('.wrap') || chatbot;
+                scrollContainer.scrollTop = scrollContainer.scrollHeight;
+            }
+        }, 100); // Aspetta un decimo di secondo per permettere l'inserimento del messaggio
+    }
+    """
+
+    # --- EVENTS ---
+    for trigger in [submit_btn.click, msg.submit]:
+        trigger(user_action, [msg, chatbot], [msg, chatbot, submit_btn, clear_btn], queue=False)\
+            .then(None, None, None, js=scroll_js) \
+            .then(bot_action, [chatbot], [chatbot, log_display])\
+            .then(reenable, None, [msg, submit_btn, clear_btn])
 
     # --- EVENTS ---
     for trigger in [submit_btn.click, msg.submit]:
