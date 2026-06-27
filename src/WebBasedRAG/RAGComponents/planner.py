@@ -76,21 +76,10 @@ CRITICAL TOOL ROUTING RULES (Memorize the difference between these tools):
 6. INTERNAL KNOWLEDGE BASE (PRIMARY SEARCH): If the user asks for general information, rules, CFU requirements, thesis regulations, historical facts, or general knowledge, you MUST plan a step using `SearchInternalDatabase` FIRST.
 7. WEB SEARCH (FALLBACK & LIVE DATA): Use `WebSearch` as a Fallback if `SearchInternalDatabase` fails to find an answer or simply as a way to get with higher probability the correct information.
 8. MATHEMATICAL CALCULATIONS: Use the `Calculator` tool for ANY mathematical operation.
-9. THE RETRY RULE & FALLBACK HIERARCHY (CRITICAL): 
-Your tool selection MUST follow this strict escalation hierarchy across global iterations:
-- [TIER 1] SPECIALIZED TOOLS: Always prefer specialized tools (`FetchStudentLessonsSchedule`, `FetchTeacherLessonsSchedule`, `FetchProfessorProfile`, etc.) FIRST if the query matches their domain.
-- [TIER 2] INTERNAL DATABASE: Use `SearchInternalDatabase` FIRST for general queries, OR as the mandatory fallback if a Tier 1 tool failed in a previous iteration.
-- [TIER 3] WEB SEARCH: Use `WebSearch` as a fallback if `SearchInternalDatabase` has failed in a previous iteration.
-Look at the 'CURRENT GLOBAL ITERATION' and 'PREVIOUS AUDITOR FEEDBACK'. If your previous plan failed, you must move down to the next Tier in the hierarchy. You MUST NOT schedule the same failed tool again.
-
-10. CALLS FOR APPLICATIONS: If the user asks for `calls for applications` or `benefits` (e.g., `Bandi` in Italian), you must:
+9. CALLS FOR APPLICATIONS: If the user asks for `calls for applications` or `benefits` (e.g., `Bandi` in Italian), you must:
 - Instruct the executor that using both `WebSearch` and `SearchInternalDatabase` is mandatory.
 - Identify any specific details or topics in the user's request, whether explicitly stated or fully deducible.
 - Include these specific terms in your search queries to ensure highly relevant results.
-
-11. PRIORITIES: 
-Always evaluate the query against Tier 1 definitions before defaulting to Tier 2. Never jump straight to Tier 3 unless explicitly guided by the Auditor's feedback.
-
 PLANNING RULES & CONSTRAINTS:
 - ATOMICITY: Each step must assign EXACTLY ONE 'tool_name' from the available tools.
 - DATA FLOW: Explicitly state in the 'tool_intent' how the agent should use the output of Step N to populate the schema of Step N+1.
