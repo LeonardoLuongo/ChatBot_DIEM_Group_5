@@ -284,12 +284,6 @@ class WebExplorer:
                 return html_content
 
             def smart_fetch_html_task(url: str):
-                # ========================================================
-                # NUOVO: INTERCETTAZIONE GOOGLE AI OVERVIEW
-                # ========================================================
-                if hasattr(self.search_orchestrator, 'extracted_snippets') and url in self.search_orchestrator.extracted_snippets:
-                    ai_text = self.search_orchestrator.extracted_snippets[url]
-                    return url, True, "Google AI / Risposta Rapida", ai_text, "Attuale"
                 # Download diretto (statico o con fallback Playwright)
                 downloaded_html = fetch_with_js_fallback(url)
                 if not downloaded_html:
