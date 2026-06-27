@@ -362,6 +362,10 @@ INSTRUCTIONS:
                 # Prendiamo la risposta formattata direttamente dall'LLM
                 final_text = final_result.answer
                 
+                # --- FIX ELENCHI PUNTATI ---
+                # Aggiungiamo i doppi a capo prima degli asterischi
+                final_text = final_text.replace(" * ", "\n\n* ")
+
                 # --- B. TRASFORMAZIONE IN LINK HTML (CON FILTRO GOOGLE AI) ---
                 source_mapping = self.session_state.source_mapping
                 cited_docs_ordered = [] 
@@ -379,7 +383,7 @@ INSTRUCTIONS:
                             # --- FILTRO FONTI INDESIDERATE ---
                             titolo_lower = dati.get('titolo', '').lower()
                             if "google ai" in titolo_lower or "risposta rapida" in titolo_lower or "overview" in titolo_lower:
-                                return "" # Restituisce stringa vuota: il tag [ X ] scompare dal testo!
+                                return "" 
                             # ---------------------------------
                             
                             if real_doc_id not in doc_to_new_index:
@@ -389,7 +393,6 @@ INSTRUCTIONS:
                             new_idx = doc_to_new_index[real_doc_id]
                             url = dati.get('smart_url', dati.get('url', '#'))
                             
-                            # Formato richiesto: Tag <sup> per l'apice
                             return f"<sup style='margin-left: 2px;'><a href='{url}' target='_blank' style='text-decoration: none; color: #fb923c; font-weight: bold;'>[{new_idx}]</a></sup>"
                         
                         return match.group(0)
@@ -398,8 +401,9 @@ INSTRUCTIONS:
                     pattern = re.compile(r'\[\s*(\d+)\s*\]')
                     final_text = pattern.sub(replace_citation, final_text)
                     
-                    # Pulisce eventuali spazi doppi lasciati dalla rimozione del tag invisibile
-                    final_text = re.sub(r'\s+', ' ', final_text).strip()
+                    # 🔴 FIX: Usiamo [ \t]+ invece di \s+
+                    # In questo modo puliamo i doppi spazi orizzontali ma SALVIAMO gli a capo (\n)!
+                    final_text = re.sub(r'[ \t]+', ' ', final_text).strip()
 
 
                 # --- COSTRUZIONE UI E BIBLIOGRAFIA ---
@@ -494,7 +498,7 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
 
     with gr.Row():
         with gr.Column(scale=7):
-            chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None), autoscroll=False,  elem_id="diem_chatbot")
+            chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None), autoscroll=False)
             with gr.Row():
                 # Definiamo i componenti
                 msg = gr.Textbox(placeholder="Fai una domanda...", container=False, scale=5, autofocus=True,  html_attributes=gr.InputHTMLAttributes(autocorrect="off", spellcheck=False))
@@ -560,29 +564,10 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
         except Exception as e: print(f"Errore clear: {e}")
         return [], "<div style='color:#64748b;'>Sessione riavviata.</div>"
 
+   # ---------------------------------------------------------
+    # GESTIONE EVENTI (Senza JS esterno)
     # ---------------------------------------------------------
-    # SCRIPT JS: Scrolla in basso SOLO all'invio della domanda
-    # ---------------------------------------------------------
-    scroll_js = """
-    function() {
-        setTimeout(function() {
-            var chatbot = document.querySelector('#diem_chatbot');
-            if (chatbot) {
-                // Cerca il contenitore con la barra di scorrimento di Gradio
-                var scrollContainer = chatbot.querySelector('.overflow-y-auto') || chatbot.querySelector('.wrap') || chatbot;
-                scrollContainer.scrollTop = scrollContainer.scrollHeight;
-            }
-        }, 100); // Aspetta un decimo di secondo per permettere l'inserimento del messaggio
-    }
-    """
-
-    # --- EVENTS ---
-    for trigger in [submit_btn.click, msg.submit]:
-        trigger(user_action, [msg, chatbot], [msg, chatbot, submit_btn, clear_btn], queue=False)\
-            .then(None, None, None, js=scroll_js) \
-            .then(bot_action, [chatbot], [chatbot, log_display])\
-            .then(reenable, None, [msg, submit_btn, clear_btn])
-
+    
     # --- EVENTS ---
     for trigger in [submit_btn.click, msg.submit]:
         trigger(user_action, [msg, chatbot], [msg, chatbot, submit_btn, clear_btn], queue=False)\
@@ -594,4 +579,5 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
              .then(lambda: (gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True)), None, [msg, submit_btn, clear_btn])
 
 if __name__ == "__main__":
+    # Assicurati di non avere altre istanze attive prima di rilanciare
     demo.launch(theme=pro_dark_theme, css=minimal_css)
