@@ -10,3 +10,4 @@ src/guardrails_log.jsonl
 */session/*.jsonl
 **/qdrant_storage/**/
 **/qdrant_storage/**.json
+*.zip
