@@ -186,7 +186,7 @@ class WebExplorer:
         ]
         return strategies
 
-    def explore_and_retrieve(self, search_query: str, target_score: float = 5.0, debug: bool = False, max_timeout_sec: float = 120.0, min_score: float = 0.6):
+    def explore_and_retrieve(self, search_query: str, target_score: float = 5.0, debug: bool = False, max_timeout_sec: float = 120.0, min_score: float = 0.6, k: int = 10):
         print(f"\n[WEB EXPLORER] Avvio ricerca per: '{search_query}'")
         start_time = time.time()
         
@@ -245,7 +245,7 @@ class WebExplorer:
                 decay_factor = elapsed / max_timeout_sec
                 current_target = target_score - ((target_score - min_score) * decay_factor)
                 
-            cumulative = sum(score for score, _, _ in collected_chunks[:5])
+            cumulative = sum(score for score, _, _ in collected_chunks[:k])
             print(f"  📊 Tempo: {elapsed:.1f}s/{max_timeout_sec}s | Soglia Dinamica: {current_target:.2f} | Score Accumulato: {cumulative:.2f}")
             
             if cumulative >= current_target:
@@ -261,7 +261,7 @@ class WebExplorer:
             return "", {}
             
         # Altrimenti restituiamo fieramente i risultati parziali/finali!
-        return self._format_output(collected_chunks[:5], page_cache, debug)
+        return self._format_output(collected_chunks[:k], page_cache, debug)
 
     # MODIFICA: Aggiunto parametro search_query
     def _fetch_all_contents(self, valid_urls: List[str], page_cache: dict, search_query: str) -> Dict[str, Tuple[str, str]]:
