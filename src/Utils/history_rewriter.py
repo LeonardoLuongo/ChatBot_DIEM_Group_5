@@ -129,15 +129,17 @@ def rewrite_with_history(
     Riscrive la query utente usando la SOTA per la 
     Conversational Query Rewriting (CQR) basata su LLM.
     """
-    if not history:
-        return HistoryRewriteResult(
-            original_query=query, final_query=query, 
-            needs_history=False, uses_history=False, 
-            confidence=1.0, rationale="Nessuna cronologia disponibile."
-        )
-
-    system_prompt = """You are a Conversational Query Rewriting (CQR) AI for a university RAG system.
+    # if not history:
+    #     return HistoryRewriteResult(
+    #         original_query=query, final_query=query, 
+    #         needs_history=False, uses_history=False, 
+    #         confidence=1.0, rationale="Nessuna cronologia disponibile."
+    #     )
+    current_dt = datetime.now().strftime("%A, %Y-%m-%d %H:%M:%S")
+    system_prompt = f"""You are a Conversational Query Rewriting (CQR) AI for a university RAG system.
 Your only task is to analyze the user's latest query in the context of the previous conversation history, and output a "Standalone Query".
+
+Do NOT use your internal training date. We are currently in this datetime (CURRENT SYSTEM DATETIME): {current_dt}
 
 CRITICAL RULES:
 1. CORE OBJECTIVE: If the current user query contains implicit references, pronouns (he, she, it, this, that), or is a follow-up question, you MUST rewrite it so that a search engine can understand it completely without needing the conversation history.
@@ -161,7 +163,11 @@ CRITICAL RULES:
         * Rewrite to: "Ho la media del 28 e voglio calcolare il mio voto di laurea per il corso Ingegneria Informatica magistrale LM-32, appartenendo alla coorte 25/26."
 5. STANDALONE CHECK: If the user's current query is ALREADY self-contained and does not refer to previous turns, you MUST set `needs_rewrite` to False and return the query EXACTLY as the user typed it.
 6. NO HALLUCINATION: Do not add external facts or constraints that the user didn't mention.
-7. UNRESOLVED AMBIGUITY AVOIDANCE: If the user's current query contains an ambiguous entity reference, and the conversation history shows that the assistant previously presented a list of multiple options to disambiguate that exact entity, BUT the user never explicitly selected one of those options in the subsequent turns, you MUST NOT arbitrarily assign or infer a choice. You are strictly prohibited from resolving the ambiguity on the user's behalf. You must preserve the exact ambiguous phrasing originally used by the user in your final rewritten query. Never guess or force a resolution without explicit user confirmation."""
+7. UNRESOLVED AMBIGUITY AVOIDANCE: If the user's current query contains an ambiguous entity reference, and the conversation history shows that the assistant previously presented a list of multiple options to disambiguate that exact entity, BUT the user never explicitly selected one of those options in the subsequent turns, you MUST NOT arbitrarily assign or infer a choice. You are strictly prohibited from resolving the ambiguity on the user's behalf. You must preserve the exact ambiguous phrasing originally used by the user in your final rewritten query. Never guess or force a resolution without explicit user confirmation.
+8. DATE CHECK: 
+  - When the user do not specify any period of time, you must deduce he's referring to the current datetime and make it clear in the query. So, give this information rewriting the query to reduce the research field. 
+  - If you detect a date or a period of time, written it better using precise numbers.
+"""
 
     human_prompt = """CONVERSATION HISTORY:
 {formatted_history}

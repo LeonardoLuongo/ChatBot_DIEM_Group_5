@@ -110,7 +110,7 @@ class AgenticRag:
         # Consiglio flash per ruoli veloci/economici e pro per la generazione finale complessa
         self.explorer_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0)
         self.agent_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0) 
-        self.judge_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.3)
+        self.judge_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0)
         #self.final_rewriter_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0)
         
         # Per il generatore finale potresti voler usare il modello 'pro' se serve più ragionamento
