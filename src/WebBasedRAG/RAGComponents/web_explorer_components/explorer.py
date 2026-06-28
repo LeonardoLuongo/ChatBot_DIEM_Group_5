@@ -186,7 +186,7 @@ class WebExplorer:
         ]
         return strategies
 
-    def explore_and_retrieve(self, search_query: str, target_score: float = 5.0, debug: bool = False, max_timeout_sec: float = 120.0, min_score: float = 0.6, k: int = 10):
+    def explore_and_retrieve(self, search_query: str, target_score: float = 5.0, debug: bool = False, max_timeout_sec: float = 120.0, min_score: float = 0.6, k: int = 15):
         print(f"\n[WEB EXPLORER] Avvio ricerca per: '{search_query}'")
         start_time = time.time()
         

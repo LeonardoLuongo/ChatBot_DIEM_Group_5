@@ -77,7 +77,6 @@ from WebBasedRAG.RAGComponents.web_explorer_components.search import (
 )
 
 # Tools
-from WebBasedRAG.RAGComponents.context_assessor import ContextAssessor
 from WebBasedRAG.RAGComponents.tools.core.registry import ToolRegistry
 from WebBasedRAG.RAGComponents.tools.services.easycourse_service import EasyCourseService
 from WebBasedRAG.RAGComponents.tools.services.professors_service import ProfessorsService
@@ -114,7 +113,7 @@ class AgenticRag:
         #self.final_rewriter_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0)
         
         # Per il generatore finale potresti voler usare il modello 'pro' se serve più ragionamento
-        self.gen_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0) 
+        self.gen_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0, thinkin_level="minimal") 
         
         
         #self.embeddings_model = NomicEmbeddings()
@@ -184,7 +183,6 @@ class AgenticRag:
             self.judge = AnswerJudge(llm=self.judge_llm)
             self.planner = QueryPlanner(llm=self.judge_llm, tools=tools) 
             self.generator = AnswerGenerator(llm=self.gen_llm)
-            self.assessor = ContextAssessor(llm=self.judge_llm)
 
         except Exception as e: 
             print(f"Errore inizializzazione sistema: {e}")
@@ -198,7 +196,6 @@ class AgenticRag:
 
     def run(self, raw_query):
         self.logs = []
-        self.session_state.clear()
         gc.collect()
         if torch.cuda.is_available(): torch.cuda.empty_cache()
 
@@ -266,23 +263,6 @@ INSTRUCTIONS:
             context = self.session_state.get_all_context()
             is_success = False
             final_result = None
-
-            # ---------------------------------------------------------
-            # NUOVO BLOCCO: 5. PRE-RETRIEVAL ASSESSMENT (Il Casello)
-            # ---------------------------------------------------------
-            if context.strip():
-                yield self.log("CASELLO", "Valutazione sufficienza del contesto in memoria...", color="#eab308"), "⏳ *Analisi cache...*"
-                assessment = self.assessor.evaluate_sufficiency(clean_query, context)
-                
-                if assessment.is_sufficient:
-                    yield self.log("CASELLO", f"⚡ CACHE HIT! Contesto già sufficiente per rispondere.<br><i>{assessment.reasoning}</i>", color="#22c55e"), "⏳ *Generazione risposta...*"
-                    is_success = True
-                    is_resolved = True # Questo salterà il Loop Agentico!
-                    final_result = self.generator.generate(clean_query, context)
-                else:
-                    yield self.log("CASELLO", f"🔍 Dati in cache parziali. Procedo con la ricerca.<br><i>{assessment.reasoning}</i>", color="#facc15"), "⏳ *Pianificazione...*"
-                    # Passiamo al planner l'indizio su cosa manca!
-                    feedback_for_search = f"We have some existing context, but it's incomplete: {assessment.reasoning}. Focus your plan on finding the missing information."
 
             # ---------------------------------------------------------
             # 6. LOOP AGENTICO RAG (Eseguito SOLO se is_resolved è False)
