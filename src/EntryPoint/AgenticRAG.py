@@ -360,7 +360,11 @@ INSTRUCTIONS:
                 # Prendiamo la risposta formattata direttamente dall'LLM
                 final_text = final_result.answer
                 
-                # --- TRASFORMAZIONE IN LINK HTML ---
+                # --- FIX ELENCHI PUNTATI ---
+                # Aggiungiamo i doppi a capo prima degli asterischi
+                final_text = final_text.replace(" * ", "\n\n* ")
+
+                # --- B. TRASFORMAZIONE IN LINK HTML (CON FILTRO GOOGLE AI) ---
                 source_mapping = self.session_state.source_mapping
                 cited_docs_ordered = [] 
                 doc_to_new_index = {}   
@@ -372,22 +376,33 @@ INSTRUCTIONS:
                         real_doc_id = doc_id_str if doc_id_str in source_mapping else int(doc_id_str) if int(doc_id_str) in source_mapping else None
                             
                         if real_doc_id is not None:
+                            dati = source_mapping[real_doc_id]
+                            
+                            # --- FILTRO FONTI INDESIDERATE ---
+                            titolo_lower = dati.get('titolo', '').lower()
+                            if "google ai" in titolo_lower or "risposta rapida" in titolo_lower or "overview" in titolo_lower:
+                                return "" 
+                            # ---------------------------------
+                            
                             if real_doc_id not in doc_to_new_index:
                                 cited_docs_ordered.append(real_doc_id)
                                 doc_to_new_index[real_doc_id] = len(cited_docs_ordered)
                             
                             new_idx = doc_to_new_index[real_doc_id]
-                            dati = source_mapping[real_doc_id]
                             url = dati.get('smart_url', dati.get('url', '#'))
                             
-                            # Formatta il link come richiesto: [ N ] sottolineato e colorato
-                            return f" <a href='{url}' target='_blank' style='text-decoration: underline; color: #fb923c;'><b>[ {new_idx} ]</b></a>"
+                            return f"<sup style='margin-left: 2px;'><a href='{url}' target='_blank' style='text-decoration: none; color: #fb923c; font-weight: bold;'>[{new_idx}]</a></sup>"
                         
                         return match.group(0)
 
                     # Intercetta i [ X ] generati dall'LLM
                     pattern = re.compile(r'\[\s*(\d+)\s*\]')
                     final_text = pattern.sub(replace_citation, final_text)
+                    
+                    # 🔴 FIX: Usiamo [ \t]+ invece di \s+
+                    # In questo modo puliamo i doppi spazi orizzontali ma SALVIAMO gli a capo (\n)!
+                    final_text = re.sub(r'[ \t]+', ' ', final_text).strip()
+
 
                 # --- COSTRUZIONE UI E BIBLIOGRAFIA ---
                 testo_ui = f"{final_text}\n\n"
@@ -481,7 +496,7 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
 
     with gr.Row():
         with gr.Column(scale=7):
-            chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None))
+            chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None), autoscroll=False)
             with gr.Row():
                 # Definiamo i componenti
                 msg = gr.Textbox(placeholder="Fai una domanda...", container=False, scale=5, autofocus=True,  html_attributes=gr.InputHTMLAttributes(autocorrect="off", spellcheck=False))
@@ -547,15 +562,43 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
         except Exception as e: print(f"Errore clear: {e}")
         return [], "<div style='color:#64748b;'>Sessione riavviata.</div>"
 
+   # ---------------------------------------------------------
+    # GESTIONE EVENTI (Senza JS esterno)
+    # ---------------------------------------------------------
+    
+    # --- JAVASCRIPT PER AUTOSCROLL INTELLIGENTE ---
+    smart_scroll_js = """
+    function() {
+        setTimeout(function() {
+            let user_messages = document.querySelectorAll('.message.user, .user');
+            if (user_messages.length > 0) {
+                let last_user_message = user_messages[user_messages.length - 1];
+                last_user_message.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }, 200); 
+    }
+    """
     # --- EVENTS ---
+    
+    # 1. Listener frontend indipendente: fa SOLO lo scroll senza toccare i dati
+    submit_btn.click(fn=None, inputs=None, outputs=None, js=smart_scroll_js)
+    msg.submit(fn=None, inputs=None, outputs=None, js=smart_scroll_js)
+
+    # 2. Pipeline dati originale intatta: il Python lavora in modo sicuro
     for trigger in [submit_btn.click, msg.submit]:
         trigger(user_action, [msg, chatbot], [msg, chatbot, submit_btn, clear_btn], queue=False)\
             .then(bot_action, [chatbot], [chatbot, log_display])\
             .then(reenable, None, [msg, submit_btn, clear_btn])
+    # # --- EVENTS ---
+    # for trigger in [submit_btn.click, msg.submit]:
+    #     trigger(user_action, [msg, chatbot], [msg, chatbot, submit_btn, clear_btn], queue=False)\
+    #         .then(bot_action, [chatbot], [chatbot, log_display])\
+    #         .then(reenable, None, [msg, submit_btn, clear_btn])
 
     clear_btn.click(lambda: (gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)), None, [msg, submit_btn, clear_btn])\
              .then(clear_session, None, [chatbot, log_display])\
              .then(lambda: (gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True)), None, [msg, submit_btn, clear_btn])
 
 if __name__ == "__main__":
+    # Assicurati di non avere altre istanze attive prima di rilanciare
     demo.launch(theme=pro_dark_theme, css=minimal_css)
