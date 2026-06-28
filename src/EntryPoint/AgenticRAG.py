@@ -498,7 +498,7 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
 
     with gr.Row():
         with gr.Column(scale=7):
-            chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None), autoscroll=True)
+            chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None), autoscroll=False)
             with gr.Row():
                 # Definiamo i componenti
                 msg = gr.Textbox(placeholder="Fai una domanda...", container=False, scale=5, autofocus=True,  html_attributes=gr.InputHTMLAttributes(autocorrect="off", spellcheck=False))
@@ -568,11 +568,34 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
     # GESTIONE EVENTI (Senza JS esterno)
     # ---------------------------------------------------------
     
+    # --- JAVASCRIPT PER AUTOSCROLL INTELLIGENTE ---
+    smart_scroll_js = """
+    function() {
+        setTimeout(function() {
+            let user_messages = document.querySelectorAll('.message.user, .user');
+            if (user_messages.length > 0) {
+                let last_user_message = user_messages[user_messages.length - 1];
+                last_user_message.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }, 200); 
+    }
+    """
     # --- EVENTS ---
+    
+    # 1. Listener frontend indipendente: fa SOLO lo scroll senza toccare i dati
+    submit_btn.click(fn=None, inputs=None, outputs=None, js=smart_scroll_js)
+    msg.submit(fn=None, inputs=None, outputs=None, js=smart_scroll_js)
+
+    # 2. Pipeline dati originale intatta: il Python lavora in modo sicuro
     for trigger in [submit_btn.click, msg.submit]:
         trigger(user_action, [msg, chatbot], [msg, chatbot, submit_btn, clear_btn], queue=False)\
             .then(bot_action, [chatbot], [chatbot, log_display])\
             .then(reenable, None, [msg, submit_btn, clear_btn])
+    # # --- EVENTS ---
+    # for trigger in [submit_btn.click, msg.submit]:
+    #     trigger(user_action, [msg, chatbot], [msg, chatbot, submit_btn, clear_btn], queue=False)\
+    #         .then(bot_action, [chatbot], [chatbot, log_display])\
+    #         .then(reenable, None, [msg, submit_btn, clear_btn])
 
     clear_btn.click(lambda: (gr.update(interactive=False), gr.update(interactive=False), gr.update(interactive=False)), None, [msg, submit_btn, clear_btn])\
              .then(clear_session, None, [chatbot, log_display])\
