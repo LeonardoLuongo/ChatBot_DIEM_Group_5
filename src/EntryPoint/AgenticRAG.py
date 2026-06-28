@@ -563,7 +563,7 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
         return [], "<div style='color:#64748b;'>Sessione riavviata.</div>"
 
    # ---------------------------------------------------------
-    # GESTIONE EVENTI (Senza JS esterno)
+    # GESTIONE EVENTI 
     # ---------------------------------------------------------
     
     # --- JAVASCRIPT PER AUTOSCROLL INTELLIGENTE ---
@@ -573,7 +573,36 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
             let user_messages = document.querySelectorAll('.message.user, .user');
             if (user_messages.length > 0) {
                 let last_user_message = user_messages[user_messages.length - 1];
-                last_user_message.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                
+                // 1. Troviamo dinamicamente e in modo sicuro il contenitore della chat che fa lo scroll
+                let getScrollParent = function(node) {
+                    if (node == null || node === document.body || node === document.documentElement) return null;
+                    let style = window.getComputedStyle(node);
+                    if (style.getPropertyValue('overflow-y') === 'auto' || style.getPropertyValue('overflow-y') === 'scroll') {
+                        return node;
+                    }
+                    return getScrollParent(node.parentNode);
+                };
+
+                let chat_container = getScrollParent(last_user_message);
+
+                if (chat_container) {
+                    // 2. Calcolo preciso: misuriamo la posizione sullo schermo (Viewport)
+                    let containerRect = chat_container.getBoundingClientRect();
+                    let messageRect = last_user_message.getBoundingClientRect();
+
+                    // La posizione esatta = scroll attuale + la differenza di altezza tra contenitore e messaggio
+                    let targetScroll = chat_container.scrollTop + (messageRect.top - containerRect.top);
+
+                    // 3. Scrolliamo SOLO la chat verso la nuova domanda
+                    chat_container.scrollTo({
+                        top: targetScroll - 15, // Lascia 15 pixel di margine in alto
+                        behavior: 'smooth'
+                    });
+                } else {
+                    // Fallback (solo nel caso in cui Gradio cambi struttura in futuro)
+                    last_user_message.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
             }
         }, 200); 
     }
