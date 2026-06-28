@@ -32,6 +32,11 @@ def pre_clean_unisa_html(raw_html, base_url):
             
         raw_html_str = re.sub(r'^\s*<\?xml[^>]*\?>', '', raw_html_str, flags=re.IGNORECASE)
         tree = html.fromstring(raw_html_str)
+        
+        # 🚀 FIX DEFINITIVO: Trasformiamo tutti i link relativi della pagina in assoluti!
+        if base_url:
+            tree.make_links_absolute(base_url)
+            
     except Exception as e:
         print(f"   [ERRORE HTML] Parsing fallito per {base_url}: {e}")
         return None
@@ -81,14 +86,30 @@ def pre_clean_unisa_html(raw_html, base_url):
             cells = row.xpath('.//td')
             if len(cells) >= 3:
                 chiave = cells[1].text_content().strip()
-                valore = cells[2].text_content().strip()
-                if chiave and valore:
-                    valore_pulito = " ".join(valore.split())
+                if chiave:
                     li = html.Element("li")
                     b = html.Element("b")
                     b.text = f"{chiave}: "
-                    b.tail = valore_pulito
                     li.append(b)
+                    
+                    # Estraiamo il testo della terza cella (senza tag)
+                    valore = cells[2].text_content().strip()
+                    valore_pulito = " ".join(valore.split())
+                    
+                    testo_nodo = html.Element("span")
+                    testo_nodo.text = valore_pulito + " "
+                    li.append(testo_nodo)
+                    
+                    # 🚀 FIX: Salviamo i link! Li peschiamo dalla cella originale
+                    # e li ricostruiamo come tag <a> funzionanti
+                    for a in cells[2].xpath('.//a'):
+                        href = a.get('href')
+                        if href:
+                            nuovo_a = html.Element("a", href=href)
+                            nuovo_a.text = a.text_content().strip() or "Link"
+                            nuovo_a.tail = " "
+                            li.append(nuovo_a)
+                            
                     ul.append(li)
         if len(ul) > 0: table.getparent().replace(table, ul)
         else: table.drop_tree()
@@ -313,6 +334,7 @@ class WebExplorer:
                 # Questo azzera i re-parsing buggati ed evita i crash 'Document' object!
                 data = trafilatura.bare_extraction(
                     cleaned_tree,
+                    url=url,
                     include_formatting=True,
                     include_tables=True,
                     include_links=True,
@@ -380,7 +402,8 @@ class WebExplorer:
                                         clean_pdf_url not in valid_urls and 
                                         clean_pdf_url not in pending_pdfs):
                                         
-                                        if len(pending_pdfs) < 5:
+                                        # Alziamo il limite per evitare che i link morti di Google intasino la coda
+                                        if len(pending_pdfs) < 20:
                                             local_text = f"{lines[i-1]} {line}" if i > 0 else line
                                             local_text_clean = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', local_text)
                                             external_context = f"Sito: {title}. Link: {anchor_text}. Testo nella pagina: {local_text_clean}"
@@ -409,7 +432,8 @@ class WebExplorer:
                 # 1. Download Unico In-Memory (regolato da PDF_MAX_PAGES)
                 text = self.pdf_extractor.fetch_raw_text(pdf_url, max_pages=PDF_MAX_PAGES)
                 
-                if not text.strip():
+                # FIX DIFENSIVO: Se text è None (per via di un errore catturato) o vuoto, scartiamo senza fare crash
+                if not text or not text.strip():
                     return pdf_url, meta["title"], "", ""
                 
                 # 2. Porzione per la stima (regolata da PDF_PEEK_CHARS)
