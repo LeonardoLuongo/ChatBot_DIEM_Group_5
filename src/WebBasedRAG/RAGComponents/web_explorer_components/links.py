@@ -14,37 +14,66 @@ from rapidfuzz import fuzz
 
 class SmartLinkGenerator:
     def generate(self, base_url: str, chunk_text: str, debug_mode: bool = False) -> str:
-        clean = re.sub(r'^CONTESTO:.*?\]\n', '', chunk_text).strip()
-        clean = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', clean) 
+        # 1. Se l'URL ha già un frammento, non lo tocchiamo
+        if "#" in base_url:
+            return base_url
+
+        # 2. Rimuoviamo le intestazioni artificiali di sistema (Chunker/Qdrant)
+        lines = chunk_text.split('\n')
+        real_lines = []
+        for line in lines:
+            lower_line = line.strip().lower()
+            if lower_line.startswith("titolo pagina") or \
+               lower_line.startswith("titolo del documento") or \
+               lower_line.startswith("data di pubblicazione") or \
+               lower_line.startswith("contesto:"):
+                continue
+            real_lines.append(line)
+        
+        real_text = "\n".join(real_lines)
+
+        # 3. Ripristiniamo la TUA pulizia Markdown originaria
+        clean = re.sub(r'\[([^\]]+)\]\([^\)]+\)', r'\1', real_text) 
         clean = re.sub(r'![\[].*?[\]]\(.*?\)', '', clean)       
         clean = re.sub(r'[*#_`~]', '', clean)
         clean = re.sub(r'<[^>]+>', '', clean)
 
+        # 4. Costruiamo i blocchi dividendo solo per a capo (Paragrafi interi)
         lines = clean.split('\n')
         valid_blocks = []
         for line in lines:
-            l_clean = re.sub(r'[ \t]+', ' ', line)
-            l_clean = re.sub(r' ([.,!?;:])', r'\1', l_clean) 
-            l_clean = re.sub(r'\(\s+', '(', l_clean)         
-            l_clean = re.sub(r'\s+\)', ')', l_clean)         
-            l_clean = re.sub(r'^[^a-zA-Z0-9À-ÿ]+', '', l_clean)
-            l_clean = re.sub(r'[^a-zA-Z0-9À-ÿ]+$', '', l_clean)
-            words = l_clean.strip().split()
-            if len(words) >= 4: valid_blocks.append(words)
+            # Normalizziamo gli spazi multipli
+            l_clean = re.sub(r'[ \t]+', ' ', line).strip()
+            if not l_clean:
+                continue
+            
+            words = l_clean.split()
+            # Un paragrafo per essere utile deve avere almeno 4 parole
+            if len(words) >= 4: 
+                valid_blocks.append(words)
 
-        if not valid_blocks: return base_url 
-        if not debug_mode: valid_blocks.sort(key=len, reverse=True)
-        target_blocks = valid_blocks if debug_mode else valid_blocks[:1]
+        if not valid_blocks: 
+            return base_url 
+        
+        # 5. Ordiniamo per lunghezza per prendere i paragrafi più "cicciotti"
+        valid_blocks.sort(key=len, reverse=True)
+        
+        # 6. LOGICA DELLE "&": Usiamo i 3 paragrafi più lunghi trovati
+        target_blocks = valid_blocks if debug_mode else valid_blocks[:3]
 
         fragments = []
         for words in target_blocks:
             if len(words) <= 8:
+                # Se è una frase corta, cerchiamo il match esatto di tutto
                 fragments.append(f"text={urllib.parse.quote(' '.join(words))}")
             else:
-                start = urllib.parse.quote(' '.join(words[:4]))
-                end = urllib.parse.quote(' '.join(words[-4:]))
+                # Se è un paragrafo lungo, diamo a Chrome l'inizio e la fine!
+                # Prende le prime 5 parole e le ultime 5. Chrome evidenzierà tutto il blocco.
+                start = urllib.parse.quote(' '.join(words[:5]))
+                end = urllib.parse.quote(' '.join(words[-5:]))
                 fragments.append(f"text={start},{end}")
 
+        # Se ci sono più blocchi, li unisce con & per l'evidenziazione multipla
         return f"{base_url}#:~:{'&'.join(fragments)}"
 
 class PDFHighlightServer:
@@ -99,8 +128,22 @@ class PDFHighlightServer:
                 response = requests.get(pdf_url, timeout=15, verify=False)
                 doc = fitz.open(stream=response.content, filetype="pdf")
 
-            clean_chunk = re.sub(r'^CONTESTO:\s*\[.*?\]\s*', '', chunk_text.strip()).strip()
-            cleaned_words = [re.sub(r'[^a-zA-Z0-9]', '', w.lower()) for w in clean_chunk.split()[:14]]
+            # 1. Trova la prima riga di VERO testo saltando le intestazioni artificiali
+            lines = chunk_text.split('\n')
+            real_text = ""
+            for line in lines:
+                lower_line = line.strip().lower()
+                if lower_line.startswith("titolo pagina") or \
+                   lower_line.startswith("titolo del documento") or \
+                   lower_line.startswith("data di pubblicazione") or \
+                   lower_line.startswith("contesto"):
+                    continue
+                if line.strip():
+                    real_text = line.strip()
+                    break # Trovata la prima riga originale del PDF
+            
+            # 2. Pulizia per il Fuzz Matcher di PyMuPDF
+            cleaned_words = [re.sub(r'[^a-zA-Z0-9]', '', w.lower()) for w in real_text.split()[:14]]
             target_str = "".join([w for w in cleaned_words if w])
             base_window_size = len([w for w in cleaned_words if w])
 

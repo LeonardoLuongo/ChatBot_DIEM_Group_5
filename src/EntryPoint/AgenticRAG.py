@@ -113,7 +113,7 @@ class AgenticRag:
         #self.final_rewriter_llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash-lite", temperature=0.0)
         
         # Per il generatore finale potresti voler usare il modello 'pro' se serve più ragionamento
-        self.gen_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0, thinkin_level="minimal") 
+        self.gen_llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite", temperature=0.0, thinking_level="minimal") 
         
         
         #self.embeddings_model = NomicEmbeddings()

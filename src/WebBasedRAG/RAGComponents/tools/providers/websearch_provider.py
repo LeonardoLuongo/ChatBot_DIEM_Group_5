@@ -56,23 +56,28 @@ class WebSearchToolProvider(ToolProvider):
             for old_id in sorted(raw_mapping.keys()):
                 doc_data = raw_mapping[old_id]
                 
-                # Salviamo il chunk nel DB!
+                # 🔴 FIX: Calcoliamo il NUOVO ID reale prima di incollarlo nel testo!
+                new_id = self.session_state._doc_counter + 1
+                
                 doc_text = context # fallback
                 for i in range(1, len(chunks)):
                     if chunks[i] == f"[Doc {old_id}]\n":
-                        doc_text = f"[Doc {old_id}]\n" + chunks[i+1]
+                        # Sostituiamo il vecchio [Doc vecchi_id] con il [Doc nuovo_id]
+                        doc_text = f"[Doc {new_id}]\n" + chunks[i+1]
                         break
                         
-                new_id = self.session_state.add_source(
+                # Salviamo il documento, il DB userà automaticamente new_id
+                added_id = self.session_state.add_source(
                     url=doc_data["url"],
                     title=doc_data["titolo"],
                     testo_estratto=doc_text,
                     smart_url=doc_data.get("smart_url"),
                     score=doc_data.get("score", 1.0),
-                    external_links=doc_data.get("links", []) # <-- Passiamo la lista
+                    external_links=doc_data.get("links", []) 
                 )
 
-                remapped_context = remapped_context.replace(f"[Doc {old_id}]", f"[Doc {new_id}]", 1)
+                # Aggiorniamo la preview che verrà mostrata all'Agente
+                remapped_context = remapped_context.replace(f"[Doc {old_id}]", f"[Doc {added_id}]", 1)
 
             # Restituiamo all'agente i chunk estratti così li può leggere!
             return f"✅ Risultati Web salvati nel DB. Anteprima dati:\n{remapped_context}"

@@ -78,6 +78,7 @@ DECISION RULES:
   d) The Context contains multiple valid alternatives for a broad query, but the Answer fails to ask the user to clarify, or asks for clarification in a generic/robotic way without using the available options.
   e) The Context is valid but the answer is not complete, and does not contain all the data mentioned. Avoid partial answers and incomplete informations. Check if the answer can be more precise and detailed looking and the context.  
   f) The Answer contains wrong information with respect to the context.
+  g) If the document number in the answer is not aligned with the document number reported in the context. 
 - SEARCH_AGAIN: 
   a) Trigger this if the Context DOES NOT contain the answer AND does not contain any useful alternatives to clarify the user's intent. 
   b) Trigger this if it fails the TEMPORAL RELEVANCE CHECK. In your reasoning, suggest specific concepts the search agent should use.

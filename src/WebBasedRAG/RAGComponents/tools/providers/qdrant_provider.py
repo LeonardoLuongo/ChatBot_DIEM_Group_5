@@ -6,6 +6,7 @@ from WebBasedRAG.RAGComponents.tools.services.qdrant_service import QdrantServic
 from WebBasedRAG.RAGComponents.session_state import GlobalSessionState
 from WebBasedRAG.RAGComponents.relevance_evaluator import RelevanceEvaluator
 import re
+from WebBasedRAG.RAGComponents.web_explorer_components.links import SmartLinkGenerator
 class SearchDatabaseInput(BaseModel):
     query: str = Field(
         ..., 
@@ -99,6 +100,9 @@ class QdrantToolProvider(ToolProvider):
             
             # 4. SALVATAGGIO
             preview_blocks = []
+
+            # Inizializziamo il generatore di link!
+            link_generator = SmartLinkGenerator()
             for url, dati in top_urls:
                 doc_id = self.session_state._doc_counter + 1
                 
@@ -109,12 +113,18 @@ class QdrantToolProvider(ToolProvider):
                     f"Contesto Esteso:\n{testo_pulito}"
                 )
                 
-                # Inserisce nel DB Globale
+                # --- FIX HIGHLIGHTING PER QDRANT ---
+                if url.lower().endswith('.pdf'):
+                    final_smart_url = url # I PDF da Qdrant li lasciamo normali
+                else:
+                    final_smart_url = link_generator.generate(url, testo_pulito, debug_mode=False)
+
+                # Inserisce nel DB Globale con il link smart
                 new_id = self.session_state.add_source(
                     url=url,
                     title=dati['titolo'],
                     testo_estratto=f"[Doc {doc_id}]\n{testo_da_salvare}",
-                    smart_url=url,
+                    smart_url=final_smart_url,  # <--- ORA È EVIDENZIATO!
                     score=dati['best_score']
                 )
                 
