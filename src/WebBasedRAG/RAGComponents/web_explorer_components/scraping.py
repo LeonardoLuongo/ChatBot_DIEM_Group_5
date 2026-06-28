@@ -41,46 +41,18 @@ class HTMLCrawler:
             return executor.submit(_isolated_job).result()
 
 class PDFExtractor:
-    def peek_pdf(self, url: str, peek_bytes: int = 65536) -> str:
-        """SOTA: Scarica solo i primi 64KB del PDF per valutarne il contenuto."""
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        try:
-            # 1. Richiesta parziale
-            headers = {"Range": f"bytes=0-{peek_bytes}"}
-            response = requests.get(url, headers=headers, timeout=4, verify=False)
-            
-            if response.status_code not in [200, 206]:
-                return ""
-                
-            # 2. Tentativo primario: Parsing di PDF Linearizzati (Web Fast View)
-            try:
-                doc = fitz.open(stream=response.content, filetype="pdf")
-                text = doc[0].get_text("text") if len(doc) > 0 else ""
-                doc.close()
-                if text.strip(): return text
-            except Exception:
-                pass # Fallirà per i PDF standard perché manca la tabella XREF alla fine
-                
-            # 3. Fallback SOTA: Estrazione grezza dei metadati in chiaro dall'intestazione binaria!
-            # Molti PDF hanno Titolo, Autore e Subject in chiaro nei primi byte prima dello stream zippato.
-            raw_strings = re.findall(b'[ -~]{5,}', response.content) # Trova stringhe ASCII stampabili
-            fallback_text = " ".join([s.decode('ascii', errors='ignore') for s in raw_strings])
-            
-            # Puliamo il rumore di fondo dei metadati PDF interni
-            fallback_text = re.sub(r'/(?:Type|Pages|Catalog|Font|Length|Filter|ColorSpace|ProcSet|MediaBox|CropBox)', '', fallback_text)
-            return fallback_text[:1500] # Restituiamo un assaggio al Reranker
-            
-        except Exception as e:
-            return ""
-
-    def fetch_raw_text(self, url: str) -> str:
+    def fetch_raw_text(self, url: str, max_pages: int = None) -> str:
+        """
+        Scarica il PDF e ne estrae il testo.
+        :param max_pages: Se None, estrae tutte le pagine. Se intero (es. 3), estrae solo le prime N.
+        """
         import urllib3
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         try:
             head_resp = requests.head(url, timeout=3, verify=False)
             if head_resp.status_code == 200:
                 content_length = int(head_resp.headers.get('Content-Length', 0))
+                # Limite di sicurezza hardcoded: scarta PDF più grandi di 5MB
                 if content_length > 5 * 1024 * 1024:
                     print(f"      [BOUNCER] Scartato PDF > 5MB: {url}")
                     return ""
@@ -93,7 +65,13 @@ class PDFExtractor:
 
             
             doc = fitz.open(stream=response.content, filetype="pdf")
-            raw_text = [page.get_text("text") for page in doc]
+            raw_text = []
+            
+            for i, page in enumerate(doc):
+                if max_pages is not None and i >= max_pages:
+                    break  # Si ferma al limite di pagine richiesto
+                raw_text.append(page.get_text("text"))
+                
             doc.close()
             return "\n\n".join(raw_text)
         # REINTEGRATO: Gestione esplicita del timeout
@@ -101,5 +79,5 @@ class PDFExtractor:
             print(f"      [TIMEOUT] ⏳ Tempo superato per: {url.split('/')[-1]}")
             return ""
         except Exception as e:
-            print(f"      [ERRORE PDF] Impossibile leggere {url}: {str(e)[:50]}")
+            print(f"      [ERRORE PDF] Impossibile leggere {url}: {str(e)}")
             return ""

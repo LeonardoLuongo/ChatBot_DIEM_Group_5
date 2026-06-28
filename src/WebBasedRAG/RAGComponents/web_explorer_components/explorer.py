@@ -398,14 +398,27 @@ class WebExplorer:
         if pending_pdfs:
             print(f"   [MULTI-THREAD] Fusione contestuale e verifica in corso per {len(pending_pdfs)} PDF...")
 
+            # ==========================================
+            # ⚙️ MANOPOLE DI TUNING PER I PDF
+            # Impostati a 'None' = Accuratezza Massima
+            # ==========================================
+            PDF_MAX_PAGES = None   # Es: 3 (Estrae solo le prime 3 pagine)
+            PDF_PEEK_CHARS = 3_000  # Es: 1500 (Valuta solo i primi 1500 caratteri per la stima)
+
             def smart_fetch_pdf_task(pdf_url, meta):
-                # 1. Chiediamo al server web di darci solo l'intestazione del PDF (primi 64KB)
-                peek_text = self.pdf_extractor.peek_pdf(pdf_url)
+                # 1. Download Unico In-Memory (regolato da PDF_MAX_PAGES)
+                text = self.pdf_extractor.fetch_raw_text(pdf_url, max_pages=PDF_MAX_PAGES)
                 
-                # 2. FUSIONE SOTA: Uniamo ciò che diceva la pagina web con ciò che dice l'interno del file
-                fused_context = f"{meta['html_context']}\nAnteprima file interno: {peek_text[:1000]}"
+                if not text.strip():
+                    return pdf_url, meta["title"], "", ""
                 
-                # 3. GIUDIZIO UNICO: Ora il Reranker ha il quadro completo!
+                # 2. Porzione per la stima (regolata da PDF_PEEK_CHARS)
+                peek_text = text if PDF_PEEK_CHARS is None else text[:PDF_PEEK_CHARS]
+                
+                # 3. FUSIONE SOTA: Contesto HTML + Testo Puro Estratto
+                fused_context = f"{meta['html_context']}\nContenuto file interno: {peek_text}"
+                
+                # 4. GIUDIZIO UNICO: Il Reranker valuta testo vero e proprio
                 fused_score = self.retrieval_engine.evaluator.calculate_reward(search_query, fused_context)
                 
                 if fused_score < 0.10: 
@@ -413,10 +426,9 @@ class WebExplorer:
                     # MODIFICA QUI: Aggiunto un quarto parametro vuoto per pareggiare le variabili
                     return pdf_url, meta["title"], "", "" 
                 
-                print(f"      [ACCETTATO ✅] PDF rilevante (Score fuso: {fused_score:.2f}): {meta['title']} (Avvio download completo)\n")
-                text = self.pdf_extractor.fetch_raw_text(pdf_url)
+                print(f"      [ACCETTATO ✅] PDF rilevante (Score fuso: {fused_score:.2f}): {meta['title']}\n")
                 
-                # MODIFICA FATTA IN PRECEDENZA
+                # 5. Restituiamo il testo già scaricato, senza fare una seconda chiamata HTTP!
                 return pdf_url, meta["title"], text, "Sconosciuta (File PDF)"
 
 
