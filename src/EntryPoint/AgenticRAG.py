@@ -126,7 +126,7 @@ class AgenticRag:
         #self.qdrant_store_dir = QDRANTDB_PATH
         try:
             # Assicurati che QdrantService accetti url e collection_name al posto di store_dir_path
-            self.qdrant_service = QdrantService(url="http://localhost:6333", collection_name="diem_chunks")
+            self.qdrant_service = QdrantService(url="http://localhost:6333", collection_name="diem_chunks_v2_task_specific")
             print(" ✅ Qdrant Vector DB su Docker connesso.")
         except Exception as e:
             print(f" ⚠️ [QDRANT WARN] Impossibile avviare il Vector DB su Docker: {e}")
@@ -254,7 +254,7 @@ INSTRUCTIONS:
             # ---------------------------------------------------------
             # NUOVO BLOCCO: 4. ACTIVE CONTEXT PRUNING (Il Mietitore)
             # ---------------------------------------------------------
-            pruned_count = self.session_state.prune_context(clean_query, self.evaluator, threshold=0.20)
+            pruned_count = self.session_state.prune_context(clean_query, self.evaluator, threshold=0.10)
             if pruned_count > 0:
                 yield self.log("MEMORIA", f"🧹 Potatura: eliminati {pruned_count} documenti obsoleti.", color="#fb923c"), "⏳ *Valutazione cache...*"
 
