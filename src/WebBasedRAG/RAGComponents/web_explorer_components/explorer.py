@@ -69,16 +69,31 @@ def pre_clean_unisa_html(raw_html, base_url):
             if bad_el.getparent() is not None:
                 bad_el.getparent().remove(bad_el)
 
-    # 2. Accordion e Tabelle
-    for panel in tree.xpath('//div[contains(@class, "panel-collapse")]'):
-        classes = panel.get("class", "")
-        panel.set("class", classes.replace("collapse", "").replace("in", ""))
+    # 2. Accordion e Tabelle (FIX SCRAMBLED CONTEXT)
+    # Copiamo il titolo dell'Accordion e lo incolliamo FISICAMENTE dentro il contenuto
+    for panel in tree.xpath('//div[contains(@class, "panel")]'):
+        heading = panel.xpath('.//div[contains(@class, "panel-heading")]')
+        collapse = panel.xpath('.//div[contains(@class, "panel-collapse")]')
+        
+        if heading and collapse:
+            title_text = heading[0].text_content().strip()
+            if title_text:
+                # Creiamo un finto titolo <h3> da ficcare DENTRO il box nascosto
+                new_title = html.Element("h3")
+                new_title.text = f"RIGUARDO: {title_text.upper()}"
+                collapse[0].insert(0, new_title)
+
+    # Ora rendiamo i pannelli visibili e rimuoviamo le classi di stile
+    for panel_collapse in tree.xpath('//div[contains(@class, "panel-collapse")]'):
+        classes = panel_collapse.get("class", "")
+        panel_collapse.set("class", classes.replace("collapse", "").replace("in", ""))
         for attr in ["style", "aria-expanded"]:
-            if attr in panel.attrib: del panel.attrib[attr]
+            if attr in panel_collapse.attrib: 
+                del panel_collapse.attrib[attr]
 
     for title_link in tree.xpath('//h3[contains(@class, "panel-title")]/a'):
         title_link.tag = "span"       
-        title_link.attrib.clear()     
+        title_link.attrib.clear()
 
     for table in tree.xpath('//table[contains(@class, "table")]'):
         ul = html.Element("ul")
