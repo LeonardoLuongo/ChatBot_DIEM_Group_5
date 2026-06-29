@@ -89,6 +89,8 @@ class EasyCourseToolProvider(ToolProvider):
                 "It supports historical data: pass the user's natural language request directly to this tool, "
                 "including any specific year, semester, or date requested by the user."
                 "CRITICAL RULE: This tool can return only a semester per call. So if you must retrieve the list of courses taught by a specific Teacher for a whole year, you should call this tool two times: one for the first semester and one for the second semester."
+                "If a semester is not explicitly requested, you MUST include the current semester directly in the query string."
+                "You must give name and surname of the teacher. If you don't have it, search for it."
             ),
             args_schema=TeacherCoursesInput
         )

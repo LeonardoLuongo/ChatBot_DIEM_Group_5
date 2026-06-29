@@ -25,23 +25,19 @@ class InfoInsegnamenti(BaseModel):
         default="", 
         description="The specific semester requested (e.g., 'primo semestre', 'secondo semestre', 'annuale'). Leave empty if not specified."
     )
-    data: str = Field(
-        default="", 
-        description="Target date DD-MM-YYYY if a specific date or year is mentioned. Empty if absent."
-    )
-
+    data: str = Field(default="", description="The exact date or academic year as written by the user (e.g. '2025/2026', '2026', '24-05-2026'). Empty if absent.")
 
 class InfoDocente(BaseModel):
     docente: str = Field(
         default="", 
         description="Professor's name. You MUST format it strictly as 'LASTNAME FIRSTNAME' uppercase (e.g., if query says 'Mario Rossi', output 'ROSSI MARIO')."
     )
-    data: str = Field(default="", description="Strictly DD-MM-YYYY (e.g., '24-05-2026'). Must be zero-padded. Empty string if absent.")
+    data: str = Field(default="", description="The exact date or academic year as written by the user (e.g. '2025/2026', '2026', '24-05-2026'). Empty if absent.")
 
 class InfoStudente(BaseModel):
     corso_di_laurea: str = Field(default="", description="E.g., 'Computer Engineering'. Omit words like 'lessons' or 'bachelor's'.")
     curriculum_anno: str = Field(default="", description="E.g., 'Third year', 'Common track'.")
-    data: str = Field(default="", description="Strictly DD-MM-YYYY (e.g., '24-05-2026'). Must be zero-padded. Empty string if absent.")
+    data: str = Field(default="", description="The exact date or academic year as written by the user (e.g. '2025/2026', '2026', '24-05-2026'). Empty if absent.")
 
 class SceltaMenu(BaseModel):
     scelta_html_value: str = Field(description="The EXACT HTML value extracted from the provided dictionary.")
@@ -207,14 +203,20 @@ class EasyCourseService:
         
         data_str = data_str.strip()
         
-        # 1. Troviamo tutte le sequenze di numeri nella stringa ignorando i separatori o fusi orari
-        # Ad esempio per "2026-05-24T00:00:00Z+02:00" estrarrà ['2026', '05', '24', '00', '00', '00', '02', '00']
+        # 1. Preserviamo se è un Anno Accademico (es. "2025/2026")
+        if re.search(r'20\d{2}[/\\-]20\d{2}', data_str):
+            return data_str
+            
+        # 2. Preserviamo se è solo un anno (es. "2026")
+        if re.fullmatch(r'20\d{2}', data_str):
+            return data_str
+
+        # 3. Logica originale per estrazione data
         numeri = re.findall(r'\d+', data_str)
         
         # Se non ci sono almeno 3 blocchi numerici, non è una data
         if len(numeri) < 3:
-            print(f"   ⚠️ Nessuna data valida trovata in: '{data_str}'.")
-            return ""
+            return data_str  # Restituisce ciò che ha trovato invece di schiantarsi
 
         # Prendiamo solo i primi tre elementi (anno, mese, giorno... o viceversa)
         blocco1, blocco2, blocco3 = numeri[0], numeri[1], numeri[2]
@@ -229,29 +231,40 @@ class EasyCourseService:
             else:
                 # Se l'anno è a 2 cifre (DD-MM-YY), per default datetime usa l'anno corrente
                 dt = datetime.strptime(f"{blocco1}-{blocco2}-{blocco3}", "%d-%m-%y")
-                
-            # Formattiamo a forza: %d e %m garantiscono i 2 digit (es. 05-04-2026)
-            data_pulita = dt.strftime("%d-%m-%Y")
-            return data_pulita
-            
+            return dt.strftime("%d-%m-%Y")
         except ValueError:
             print(f"   ⚠️ Impossibile costruire una data logica da: '{data_str}'.")
-            return ""
-
+            return data_str
 
     def _calcola_anno_accademico(self, data_str: str, opzioni_anno: Dict[str, str]) -> str:
         """Calcola deterministicamente l'anno accademico in Python, bypassando l'LLM."""
         if not opzioni_anno: 
             return ""
 
-        print("   ⚙️ [PYTHON] Calcolo matematico dell'Anno Accademico...")
+        print(f"   ⚙️ [PYTHON] Calcolo matematico dell'Anno Accademico (Input LLM: '{data_str}')...")
         try:
-            # Se abbiamo la data usiamo quella, altrimenti la data di oggi
-            dt = datetime.strptime(data_str, "%d-%m-%Y") if data_str else datetime.now()
+            target_year = None
+            
+            # CASO 1: Anno Accademico esplicito (es. "2025/2026")
+            match_aa = re.search(r'(20\d{2})\s*[/\\-]\s*(20\d{2})', data_str)
+            if match_aa:
+                target_year = int(match_aa.group(1))
+            
+            # CASO 2: Nessun anno esplicito, usiamo data esatta o anno singolo
+            else:
+                try:
+                    dt = datetime.strptime(data_str, "%d-%m-%Y") if data_str else datetime.now()
+                except ValueError:
+                    # Se ha scritto "2026", simuliamo il 1 Gennaio 2026
+                    match_anno = re.search(r'(20\d{2})', data_str)
+                    if match_anno:
+                        dt = datetime(int(match_anno.group(1)), 1, 1)
+                    else:
+                        dt = datetime.now()
 
-            # Regola aurea: se siamo tra Gennaio e Agosto, l'anno è iniziato l'anno scorso.
-            # Se siamo tra Settembre e Dicembre, l'anno è quello corrente.
-            target_year = dt.year if dt.month >= 9 else dt.year - 1
+                # Regola aurea: mesi < Settembre -> anno precedente
+                target_year = dt.year if dt.month >= 9 else dt.year - 1
+
             target_val = str(target_year)
 
             # Verifichiamo che l'anno calcolato esista effettivamente nella tendina HTML
@@ -516,7 +529,7 @@ class EasyCourseService:
                 ("system", "Extract the professor's name ('docente'), the target semester ('semestre'), and the date ('data') from the user query. "
                            "CRITICAL: Format 'docente' strictly as 'SURNAME NAME' (e.g. 'GRECO ANTONIO'). "
                            "For 'semestre', extract words like 'primo semestre' or 'secondo semestre'. If none, leave empty. "
-                           "For 'data', extract a DD-MM-YYYY date if a specific year or date is mentioned."),
+                           "For 'data', extract the exact string typed by the user (e.g. '2025/2026', '2026', '12-05-2026'). Do not force DD-MM-YYYY if it's an academic year."),
                 ("human", "{query}")
             ])
             info: InfoInsegnamenti = (prompt | insegnamenti_parser).invoke({"query": query})
