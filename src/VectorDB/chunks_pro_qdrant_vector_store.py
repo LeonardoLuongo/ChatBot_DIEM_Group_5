@@ -17,7 +17,7 @@ from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
 
-COLLECTION_NAME = "diem_chunks"
+COLLECTION_NAME = "diem_chunks_v2_task_specific"
 DEFAULT_DENSE_MODEL = "jinaai/jina-embeddings-v3"
 DEFAULT_SPARSE_MODEL = "Qdrant/bm25"
 
@@ -115,14 +115,15 @@ class JinaEmbedder:
         # IMPOSTA LA GRANDEZZA MASSIMA DEI TOKEN QUI:
         self.model.max_seq_length = max_length
 
-    def embed_passages(self, texts: list[str]) -> np.ndarray:
-        return self.model.encode(
-            texts,
+    def embed_passages(self, texts: list[str], task: str | None = None) -> np.ndarray:
+        encode_kwargs = dict(
             batch_size=self.batch_size,
             normalize_embeddings=True,
             show_progress_bar=True,
         )
-
+        if task is not None:
+            encode_kwargs["prompt_name"] = task
+        return self.model.encode(texts, **encode_kwargs)
 
 def point_id(chunk_id: str) -> str:
     """Stable UUID used as Qdrant point id."""
@@ -718,11 +719,11 @@ class ChunksProQdrantBuilder:
         sparse_texts = [f"{question_texts[index]}\n{context_texts[index]}" for index in range(len(all_records))]
 
         print("Embedding testo chunk...")
-        dense_vectors = embedder.embed_passages(dense_texts).astype(np.float32)
+        dense_vectors = embedder.embed_passages(dense_texts, task="retrieval.passage").astype(np.float32)
         print("Embedding testo arricchito con metadati...")
-        context_vectors = embedder.embed_passages(context_texts).astype(np.float32)
+        context_vectors = embedder.embed_passages(context_texts, task="retrieval.passage").astype(np.float32)
         print("Embedding domande/keyword metadata...")
-        question_vectors = embedder.embed_passages(question_texts).astype(np.float32)
+        question_vectors = embedder.embed_passages(question_texts, task="retrieval.query").astype(np.float32)
 
         for name, vectors in [
             ("dense", dense_vectors),
@@ -813,7 +814,7 @@ class ChunksProQdrantBuilder:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Crea un Qdrant store direttamente da chunks_pro con metadata matching e RAPTOR.")
     default_chunks_dir = Path("ChatBot_DIEM_Group_5/chunks_pro") 
-    default_output_dir = Path("ChatBot_DIEM_Group_5/src/VectorDB/qdrant_chunks_pro_raptor_jina")
+    default_output_dir = Path("ChatBot_DIEM_Group_5/src/VectorDB/qdrant_chunks_pro_raptor_jina_v2")
     parser.add_argument("--chunks-pro-dir", type=Path, default=default_chunks_dir)
     parser.add_argument("--output-dir", type=Path, default=default_output_dir)
     parser.add_argument("--dense-model", default=DEFAULT_DENSE_MODEL)
@@ -826,7 +827,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--raptor-max-levels", type=int, default=2)
     parser.add_argument("--raptor-max-children", type=int, default=8)
     parser.add_argument("--raptor-min-children", type=int, default=3)
-    parser.add_argument("--max-length", type=int, default=4096, help="Numero massimo di token per chunk (es. 1024, 2048, 8192)")
+    parser.add_argument("--max-length", type=int, default=8192, help="Numero massimo di token per chunk (es. 1024, 2048, 8192)")
     return parser.parse_args()
 
 
