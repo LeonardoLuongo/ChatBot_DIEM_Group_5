@@ -52,6 +52,7 @@ Your task is to organize the draft to maximize typographic elegance and readabil
 - Structured: Organize the text logically. If the text contains multiple concepts, separate them with a line break.
 - Bulleted Lists: Use bulleted lists when necessary to list requirements, options, courses, or procedures. Make sure every single point from the original list is present.
 - Focused Emphasis: Use **boldface** to visually emphasize key concepts, names, courses, professor names, classrooms, dates, and deadlines.
+- Mathematical Formulas (CRITICAL): Write formulas in clean plain text. DO NOT use LaTeX syntax ($ or $$). NEVER use the asterisk (*) for multiplication! You MUST use the symbol '×' instead (e.g., Voto_Base = (4.1 × Media - 8.8) / 110). Use standard markdown (like **bold** or *italics*) to emphasize variables if needed. Ensure clear spacing around operators like '+', '-', '/', '×', and '='.
 - Tone: Professional, institutional, objective, clear, and extremely helpful.
 
 AMBIGUITY HANDLING RULES:
