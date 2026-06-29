@@ -487,18 +487,32 @@ class WebExplorer:
         
         # --- TRUE PARENT-CHILD DEDUPLICATION ---
         seen_parent_ids = set()
+        url_chunk_counts = {} # Traccia quanti chunk abbiamo preso per ogni URL
         unique_chunks = []
         
         for score, url, chunk in top_chunks:
             # 1. Pulizia richiesta: riduce gli a capo multipli salvando token
             clean_chunk = re.sub(r'\n{3,}', '\n\n', chunk).strip()
             
+            # Calcolo budget dinamico basato sul punteggio del Cross-Encoder (BGE)
+            if score >= 0.95:
+                max_chunks_for_url = 20
+            elif score >= 0.85:
+                max_chunks_for_url = 12  # Rilevanza altissima
+            elif score >= 0.60:
+                max_chunks_for_url = 5   # Rilevanza media
+            else:
+                max_chunks_for_url = 2   # Rilevanza bassa (evita inquinamento)
+                
+            current_count = url_chunk_counts.get(url, 0)
+
             # 2. Deduplicazione infallibile O(1):
             # Siccome ogni "Figlio" ha esattamente lo stesso testo del "Padre", 
             # se due figli fanno match, la stringa pulita sarà identica.
-            if clean_chunk not in seen_parent_ids:
+            if clean_chunk not in seen_parent_ids and current_count < max_chunks_for_url:
                 seen_parent_ids.add(clean_chunk)
                 unique_chunks.append((score, url, clean_chunk))
+                url_chunk_counts[url] = current_count + 1
 
         # 3. Costruzione output finale pulitissimo
         for i, (score, url, clean_chunk) in enumerate(unique_chunks, 1):
@@ -515,7 +529,7 @@ class WebExplorer:
                 "url": url, "smart_url": smart_url,
                 "titolo": page_cache.get(url_pulito, {}).get("titolo", "Pagina Web"),
                 "score": score,
-                "links": page_cache.get(url_pulito, {}).get("links", []) # <-- Passiamo la lista
+                "links": page_cache.get(url_pulito, {}).get("links", []) 
             }
         return "\n\n".join(formatted_chunks), source_mapping
 

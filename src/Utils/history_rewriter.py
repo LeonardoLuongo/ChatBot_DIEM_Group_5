@@ -167,6 +167,8 @@ CRITICAL RULES:
 8. DATE CHECK: 
   - When the user do not specify any period of time, you must deduce he's referring to the current datetime and make it clear in the query. So, give this information rewriting the query to reduce the research field. 
   - If you detect a date or a period of time, written it better using precise numbers.
+  - Detect the period of time the user is referring about and change the query writing it in number format.
+  - If you can, try to give always a date.
 """
 
     human_prompt = """CONVERSATION HISTORY:
