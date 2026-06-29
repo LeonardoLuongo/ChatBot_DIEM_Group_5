@@ -49,6 +49,7 @@ class JinaEmbedder:
             batch_size=1,
             normalize_embeddings=True,
             show_progress_bar=False,
+            prompt_name="retrieval.query",
         )[0]
         return np.asarray(vector, dtype=np.float32)
 
@@ -167,11 +168,11 @@ class QdrantService:
         # Usiamo il nuovo JinaEmbedder
         self.embedder = JinaEmbedder(DEFAULT_DENSE_MODEL, device=device)
 
-    def search(self, query: str, limit: int = 5) -> List[SearchResult]:
+    def search(self, query: str, limit: int = 15) -> List[SearchResult]:
         boost_keyword = detect_keyword_query(query)
         categories = detect_category_filters(query)
         query_filter = build_category_filter(categories)
-        fetch_limit = max(limit * 3, 20)
+        fetch_limit = max(limit * 3, 50)
         query_vector = self.embedder.embed_query(query).tolist()
 
         results = self._search_with_filter(query, query_vector, fetch_limit, limit, boost_keyword, categories, query_filter)
@@ -375,7 +376,7 @@ class QdrantService:
                 add_result(result)
             else:
                 child_ids = payload.get("descendant_leaf_ids") or payload.get("children_ids") or []
-                child_points = self._retrieve_points_by_chunk_ids(child_ids[:12])
+                child_points = self._retrieve_points_by_chunk_ids(child_ids[:16])
                 if not child_points:
                     add_result(result)
                 for rank, point in enumerate(child_points, 1):

@@ -44,7 +44,8 @@ class JinaEmbeddings:
             task=task,
             batch_size=batch_size,
             convert_to_tensor=True,
-            show_progress_bar=False
+            show_progress_bar=False,
+            prompt_name=task 
         )
         # Convertiamo sempre l'output in float32 per evitare crash nel dot product
         return embeddings.to(device=self.device, dtype=torch.float32)
