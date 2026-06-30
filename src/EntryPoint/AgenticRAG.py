@@ -6,6 +6,7 @@ import re
 import torch
 import ssl
 import gradio as gr
+import base64
 from datetime import datetime
 from pathlib import Path
 
@@ -15,6 +16,13 @@ import torch
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 
+# Funzione per bypassare i bug di Gradio convertendo il logo in HTML puro
+def get_base64_logo(image_path):
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode('utf-8')
+    except Exception as e:
+        return None
 
 # ==========================================
 # 1. SETUP PATHS
@@ -126,7 +134,10 @@ class AgenticRag:
         #self.qdrant_store_dir = QDRANTDB_PATH
         try:
             # Assicurati che QdrantService accetti url e collection_name al posto di store_dir_path
-            self.qdrant_service = QdrantService(url="http://localhost:6333", collection_name="diem_chunks_v2_task_specific")
+            #self.qdrant_service = QdrantService(url="http://localhost:6333", collection_name="diem_chunks_v2_task_specific")
+            
+            self.qdrant_service = QdrantService(url="http://localhost:6333", collection_name="diem_chunks")
+            
             print(" ✅ Qdrant Vector DB su Docker connesso.")
         except Exception as e:
             print(f" ⚠️ [QDRANT WARN] Impossibile avviare il Vector DB su Docker: {e}")
@@ -431,54 +442,73 @@ pro_dark_theme = gr.themes.Soft(primary_hue="orange", neutral_hue="slate").set(
 )
 
 minimal_css = """
-#log_panel { height: 550px !important; overflow-y: auto !important; padding: 15px; background: #1e293b; border-radius: 8px; border: 1px solid #334155; }
+#log_panel { height: 680px !important; overflow-y: auto !important; padding: 15px; background: #1e293b; border-radius: 8px; border: 1px solid #334155; }
 .gradio-container { max-width: 100% !important; padding: 0 20px !important; }
 
-/* Giustifica i paragrafi normali */
-.message.bot .prose p {
-    text-align: justify !important;
+/* FOOTER MINIMALE: Crea uno spazio vuoto sotto la chat  */
+footer {
+    display: block !important;
+    height: 30px !important;
+    min-height: 30px !important;
+    margin-top: 15px !important;
+    padding: 0 !important;
+    border: none !important;
 }
+footer * { display: none !important; }
 
-/* Stile per gli elenchi puntati */
+/* STILI PER ALLINEARE LOGO E TESTATA */
+#header-row { align-items: center !important; }
+.header-text .prose h2 { margin-bottom: 2px !important; line-height: 1.2 !important; }
+.header-text .prose p { margin-top: 0px !important; margin-bottom: 0px !important; line-height: 1.2 !important; }
+
+/* Rimuove i margini di default che Gradio mette ai componenti HTML */
+#logo-image { margin: 0 !important; padding: 0 !important; }
+
+/* Giustifica i paragrafi normali e sistema liste */
+.message.bot .prose p { text-align: justify !important; }
 .message.bot .prose ul {
-    list-style-type: disc !important; /* Pallino pieno */
-    list-style-position: outside !important; /* Mantiene la seconda riga allineata con la prima! */
-    padding-left: 2rem !important; /* Rientro totale dell'elenco verso destra */
+    list-style-type: disc !important; 
+    list-style-position: outside !important; 
+    padding-left: 2rem !important; 
     margin-top: 0.8rem !important;
     margin-bottom: 0.8rem !important;
 }
-
 .message.bot .prose li {
-    text-align: justify !important; /* FORZA IL GIUSTIFICATO ANCHE NELLE LISTE */
-    padding-left: 0.3rem !important; /* Distanza tra pallino e testo */
-    margin-bottom: 0.6rem !important; /* Spazio tra un punto e l'altro */
+    text-align: justify !important; 
+    padding-left: 0.3rem !important; 
+    margin-bottom: 0.6rem !important; 
     line-height: 1.6 !important;
 }
-
-/* Colore e dimensione del pallino */
-.message.bot .prose li::marker {
-    color: #fb923c !important; /* Arancione DIEM */
-    font-size: 1.1em !important;
-}
+.message.bot .prose li::marker { color: #fb923c !important; font-size: 1.1em !important; }
 """
+logo_path = os.path.join(CURRENT_DIR , "logo_ChatBot_DIEM_Gruop5.png")
 
-logo_path = os.path.join(SRC_PATH.parent , "logo_ChatBot_DIEM_Gruop5.png")
+with gr.Blocks(fill_width=True) as demo:
+    
+    with gr.Row(elem_id="header-row"):
+        if os.path.exists(logo_path): 
+            b64_logo = get_base64_logo(logo_path)
+            img_html = f'<img src="data:image/png;base64,{b64_logo}" style="width: 65px; height: 65px; object-fit: contain; pointer-events: none; user-select: none;">'
+        else:
+            img_html = '<h1 style="margin: 0; font-size: 40px;">🤖</h1>'
 
-with gr.Blocks(fill_width=True, css=minimal_css) as demo:
-    with gr.Row():
-        with gr.Column(scale=1, min_width=80):
-            if os.path.exists(logo_path): gr.Image(logo_path, show_label=False, width=80, container=False)
-            else: gr.Markdown("# 🤖")
-        with gr.Column(scale=11):
-            gr.Markdown("## DIEM Agentic Helper\n*Università degli Studi di Salerno - A.A. 2025/2026*")
+        header_html = f"""
+        <div style="display: flex; align-items: center; gap: 15px;">
+            {img_html}
+            <div>
+                <h2 style="margin: 0; font-size: 1.5rem; font-weight: bold; line-height: 1.2;">DIEM Agentic Helper</h2>
+                <p style="margin: 0; font-style: italic; color: #94a3b8; line-height: 1.2;">Università degli Studi di Salerno - A.A. 2025/2026</p>
+            </div>
+        </div>
+        """
+        gr.HTML(value=header_html)
 
     gr.Markdown("---")
 
     with gr.Row():
         with gr.Column(scale=7):
-            chatbot = gr.Chatbot(label="Agente Conversazionale", height=520, avatar_images=(None, logo_path if os.path.exists(logo_path) else None), autoscroll=False)
+            chatbot = gr.Chatbot(label="Agente Conversazionale", height=620, avatar_images=(None, logo_path if os.path.exists(logo_path) else None), autoscroll=False)
             with gr.Row():
-                # Definiamo i componenti
                 msg = gr.Textbox(placeholder="Fai una domanda...", container=False, scale=5, autofocus=True,  html_attributes=gr.InputHTMLAttributes(autocorrect="off", spellcheck=False))
                 submit_btn = gr.Button("Invia", variant="primary", scale=1)
             clear_btn = gr.Button("🗑️ Svuota Chat", variant="stop", size="sm")
@@ -499,7 +529,6 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
         if not history or history[-1]["role"] != "user": 
             yield history, gr.update(); return
         
-        # --- FIX ESTRAZIONE QUERY ---
         raw_content = history[-1]["content"]
         user_query = user_query = raw_content if isinstance(raw_content, str) else " ".join([p["text"] for p in raw_content if "text" in p])
 
@@ -609,5 +638,4 @@ with gr.Blocks(fill_width=True, css=minimal_css) as demo:
              .then(lambda: (gr.update(interactive=True), gr.update(interactive=True), gr.update(interactive=True)), None, [msg, submit_btn, clear_btn])
 
 if __name__ == "__main__":
-    # Assicurati di non avere altre istanze attive prima di rilanciare
     demo.launch(theme=pro_dark_theme, css=minimal_css)
