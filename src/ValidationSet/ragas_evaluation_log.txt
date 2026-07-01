@@ -1,0 +1,51 @@
+
+--- Valutazione del 2026-07-01 13:02:31 (Tot: 5 domande) ---
+Faithfulness: 1.0000
+Answer Relevancy: 0.6364
+Context Precision: 0.6000
+Context Recall: 0.7000
+Dettagli del nuovo Batch:
+Q: Chi è il professore del corso di ai for cybersecurity?
+  Faith: 1.0 | Rel: 0.6861863618222489 | C.Prec: 0.9999999999 | C.Rec: 1.0
+Q: chi è il primo laureato in Electrical Dital Engeneering?
+  Faith: 1.0 | Rel: 0.4610081663909255 | C.Prec: 0.9999999999 | C.Rec: 1.0
+Q: Quali corsi di laurea sono offerti dal DIEM?
+  Faith: 1.0 | Rel: 0.5413308169698062 | C.Prec: 0.0 | C.Rec: 0.5
+Q: Quali sono i requisiti di ammissione per il Master’s Degree in Information Engineering per la Digital Medicine?
+  Faith: nan | Rel: 0.8202297119103766 | C.Prec: 0.9999999999 | C.Rec: 1.0
+Q: Qual è il programma del corso di Ingegneria del Software?
+  Faith: 1.0 | Rel: 0.6732920298338398 | C.Prec: 0.0 | C.Rec: 0.0
+
+--- Valutazione del 2026-07-01 13:02:31 (Tot: 5 domande) ---
+Faithfulness: 1.0000
+Answer Relevancy: 0.6364
+Context Precision: 0.6000
+Context Recall: 0.7000
+Dettagli del nuovo Batch:
+Q: Chi è il professore del corso di ai for cybersecurity?
+  Faith: 1.0 | Rel: 0.6861863618222489 | C.Prec: 0.9999999999 | C.Rec: 1.0
+Q: chi è il primo laureato in Electrical Dital Engeneering?
+  Faith: 1.0 | Rel: 0.4610081663909255 | C.Prec: 0.9999999999 | C.Rec: 1.0
+Q: Quali corsi di laurea sono offerti dal DIEM?
+  Faith: 1.0 | Rel: 0.5413308169698062 | C.Prec: 0.0 | C.Rec: 0.5
+Q: Quali sono i requisiti di ammissione per il Master’s Degree in Information Engineering per la Digital Medicine?
+  Faith: nan | Rel: 0.8202297119103766 | C.Prec: 0.9999999999 | C.Rec: 1.0
+Q: Qual è il programma del corso di Ingegneria del Software?
+  Faith: 1.0 | Rel: 0.6732920298338398 | C.Prec: 0.0 | C.Rec: 0.0
+
+--- Valutazione del 2026-07-01 15:49:57 (Tot: 5 domande) ---
+Faithfulness: 1.0000
+Answer Relevancy: 0.6372
+Context Precision: 0.6000
+Context Recall: 0.6000
+Dettagli del nuovo Batch:
+Q: Chi è il professore del corso di ai for cybersecurity?
+  Faith: 1.0 | Rel: 0.7034567302893037 | C.Prec: 0.9999999999 | C.Rec: 1.0
+Q: chi è il primo laureato in Electrical Dital Engeneering?
+  Faith: 1.0 | Rel: 0.474838341575111 | C.Prec: 0.9999999999 | C.Rec: 1.0
+Q: Quali corsi di laurea sono offerti dal DIEM?
+  Faith: 1.0 | Rel: 0.5631173146644656 | C.Prec: 0.0 | C.Rec: 0.5
+Q: Quali sono i requisiti di ammissione per il Master’s Degree in Information Engineering per la Digital Medicine?
+  Faith: 1.0 | Rel: 0.782585292017456 | C.Prec: 0.9999999999 | C.Rec: 0.5
+Q: Qual è il programma del corso di Ingegneria del Software?
+  Faith: 1.0 | Rel: 0.6620570785530699 | C.Prec: 0.0 | C.Rec: 0.0

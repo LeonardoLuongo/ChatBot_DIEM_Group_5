@@ -349,7 +349,9 @@ INSTRUCTIONS:
             # =========================================================
             if final_result:
                 # Prendiamo la risposta formattata direttamente dall'LLM
+                self.last_pure_answer = final_result.answer
                 final_text = final_result.answer
+                self.last_retrieved_context = context 
                 
                 # --- FIX ELENCHI PUNTATI ---
                 # Aggiungiamo i doppi a capo prima degli asterischi
