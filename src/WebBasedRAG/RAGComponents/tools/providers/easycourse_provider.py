@@ -75,16 +75,6 @@ class EasyCourseToolProvider(ToolProvider):
                     )
                     
                     return f"✅ Insegnamenti del docente recuperati e salvati nel DB come [Doc {doc_id}]. Contenuto:\n{testo_da_salvare}\n"
-                
-                elif data.get("status") == "NEED_INFO":
-                    self.session_state.add_source(
-                        url="tool://easycourse",
-                        title="Richiesta Dati Tool",
-                        testo_estratto=result_json,
-                        score=1.0
-                    )
-                    return f"⚠️ Tool in pausa. Richiesta di chiarimento inoltrata all'utente."
-                
                 else:
                     return f"❌ Fallimento del tool interno: {data.get('message')}"
             except Exception as e: 
@@ -136,16 +126,6 @@ class EasyCourseToolProvider(ToolProvider):
                     )
                     
                     return f"✅ Orario studenti recuperato con successo e salvato come [Doc {doc_id}]. Contenuto: {testo_da_salvare}\n"
-                
-                elif data.get("status") == "NEED_INFO":
-                    self.session_state.add_source(
-                        url="tool://easycourse",
-                        title="Richiesta Dati Tool",
-                        testo_estratto=result_json,
-                        score=1.0
-                    )
-                    return f"⚠️ Tool in pausa. Richiesta di chiarimento inoltrata all'utente."
-                
                 else:
                     return f"❌ Fallimento del tool interno: {data.get('message')}"
             except Exception as e: 
@@ -180,16 +160,6 @@ class EasyCourseToolProvider(ToolProvider):
                     )
                     
                     return f"✅ Orario docente recuperato e salvato nel DB come [Doc {doc_id}]. Contenuto: {testo_da_salvare}\n"
-                
-                elif data.get("status") == "NEED_INFO":
-                    self.session_state.add_source(
-                        url="tool://easycourse",
-                        title="Richiesta Dati Tool",
-                        testo_estratto=result_json,
-                        score=1.0
-                    )
-                    return f"⚠️ Tool in pausa. Richiesta di chiarimento inoltrata all'utente."
-                
                 else:
                     return f"❌ Fallimento del tool interno: {data.get('message')}"
             except Exception as e: 

@@ -139,13 +139,12 @@ class EasyCourseService:
         prompt = ChatPromptTemplate.from_messages([
             ("system", f"You are an expert web scraping agent. Your current task is: {contesto}.\n"
                        f"Read the user's request and find the best option among those provided in the JSON Array.\n"
-                       f"You MUST return EXACTLY and ONLY the string from the 'html_value' field. Do not concatenate or modify it.\n"
-                       f"CRITICAL: If the user's request is too generic and matches multiple options equally, OR if none of the options match the request, you MUST return EXACTLY 'AMBIGUOUS' as the html_value."
+                       f"You MUST return EXACTLY and ONLY the string from the 'html_value' field. Do not concatenate or modify it."
                        f"{regola_anno}{regole_generali}"),
             ("human", "User's original query: '{query_utente}'\n\n"
                       "Available options:\n"
                       "{options_json}\n\n"
-                      "Extract the correct 'html_value' or 'AMBIGUOUS'.")
+                      "Extract the correct 'html_value'.")
         ])
         
         try:
@@ -160,11 +159,6 @@ class EasyCourseService:
             })
             
             scelta_sporca = risultato.scelta_html_value
-            
-            if scelta_sporca == "AMBIGUOUS":
-                print(f"      ⚠️ L'LLM ha dichiarato la query AMBIGUA.")
-                return "AMBIGUOUS"
-
             valori_validi = list(options_dict.values())
             
             # -------------------------------------------------------------
@@ -357,12 +351,8 @@ class EasyCourseService:
                 opzioni_corso_papabili = self._filtra_opzioni_semantiche(info.corso_di_laurea, opzioni_corso_totali, top_k=5)
                 id_corso_scelto = self._ask_llm_to_choose(query, opzioni_corso_papabili, "Select the Degree Course")
                 
-                if not id_corso_scelto or id_corso_scelto == "AMBIGUOUS":
-                    lista = "\n".join([f"- {k}" for k in opzioni_corso_papabili.keys()])
-                    return json.dumps({
-                        "status": "NEED_INFO", 
-                        "message": f"Non è chiaro a quale Corso di Studio ti riferisci (oppure la ricerca è troppo generica). Quale tra questi intendi esattamente?\n\n{lista}"
-                    })
+                if not id_corso_scelto:
+                    return json.dumps({"status": "ERROR", "message": "Impossibile determinare il corso richiesto."})
                 
                 page.locator('select[name="corso"]').select_option(value=id_corso_scelto, force=True)
                 page.wait_for_timeout(TIMEOUT + 200)
@@ -375,13 +365,6 @@ class EasyCourseService:
                     # L'LLM userà le sue "GENERAL LOGIC RULES" per mappare intelligentemente "primo" a "1".
                     id_curr_scelto = self._ask_llm_to_choose(query, opzioni_curriculum_totali, "Select the Year of Study / Curriculum")
                     
-                    if not id_curr_scelto or id_curr_scelto == "AMBIGUOUS":
-                        lista = "\n".join([f"- {k}" for k in opzioni_curriculum_totali.keys()])
-                        return json.dumps({
-                            "status": "NEED_INFO", 
-                            "message": f"Per questo corso è necessario specificare l'Anno e/o il Curriculum. Quale di questi intendi?\n\n{lista}"
-                        })
-
                     if id_curr_scelto:
                         page.locator('select[name="anno2[]"], select#anno2').select_option(value=id_curr_scelto, force=True)
                         self._attendi_ajax(page)
@@ -486,12 +469,8 @@ class EasyCourseService:
 
                 id_docente_scelto = self._ask_llm_to_choose(query, opzioni_docenti_papabili, "Select the Professor full name")
                 
-                if not id_docente_scelto or id_docente_scelto == "AMBIGUOUS":
-                    lista = "\n".join([f"- {k}" for k in opzioni_docenti_papabili.keys()])
-                    return json.dumps({
-                        "status": "NEED_INFO", 
-                        "message": f"Non sono riuscito a identificare il docente in modo univoco. Quale di questi intendi?\n\n{lista}"
-                    })
+                if not id_docente_scelto:
+                    return json.dumps({"status": "ERROR", "message": f"Impossibile determinare il docente '{termine_da_cercare}' tra le opzioni disponibili."})
                 
                 page.locator('select[name="docente"]').select_option(value=id_docente_scelto, force=True)
                 self._attendi_ajax(page)
@@ -669,19 +648,15 @@ class EasyCourseService:
                     id_sem_scelto = self._ask_llm_to_choose(
                         target_semestre, opzioni_semestre, "Select the Teaching Period / Semester"
                     )
-                    
-                    if not id_sem_scelto or id_sem_scelto == "AMBIGUOUS":
-                        lista = "\n".join([f"- {k}" for k in opzioni_semestre.keys()])
-                        return json.dumps({
-                            "status": "NEED_INFO", 
-                            "message": f"È necessario specificare il periodo o semestre. Quale di questi intendi?\n\n{lista}"
-                        })
-                        
-                    if self._select2_click_value(page, sem_name, id_sem_scelto):
-                        self._attendi_ajax(page)
-                        print(f"      ✅ Semestre selezionato: '{id_sem_scelto}'")
+                    if id_sem_scelto:
+                        # _select2_click_value apre il dropdown se chiuso, clicca l'opzione
+                        if self._select2_click_value(page, sem_name, id_sem_scelto):
+                            self._attendi_ajax(page)
+                            print(f"      ✅ Semestre selezionato: '{id_sem_scelto}'")
+                        else:
+                            print(f"      ⚠️ Value '{id_sem_scelto}' non trovato tra i <li>.")
                     else:
-                        print(f"      ⚠️ Value '{id_sem_scelto}' non trovato tra i <li>.")
+                        print("      ⚠️ LLM non ha scelto alcun semestre.")
                 else:
                     print("      ❌ Nessuna opzione semestre disponibile — si procede senza filtro periodo.")
 
