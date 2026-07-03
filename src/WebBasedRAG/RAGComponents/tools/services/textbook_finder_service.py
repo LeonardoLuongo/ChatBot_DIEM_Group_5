@@ -5,7 +5,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Optional
-
+import re
 
 # =========================================================================
 # ECCEZIONI
@@ -144,6 +144,7 @@ class TextbookFinderService:
         exam_name: str,
         professor_nome: Optional[str] = None,
         professor_cognome: Optional[str] = None,
+        academic_year: Optional[str] = None,
         force_refresh: bool = False,
     ) -> dict:
         """
@@ -153,6 +154,7 @@ class TextbookFinderService:
             exam_name:          Nome dell'insegnamento (es. "Artificial Vision").
             professor_nome:     Nome del docente, se già noto/fornito dall'utente.
             professor_cognome:  Cognome del docente, se già noto/fornito dall'utente.
+            academic_year:      L'anno accademico di riferimento (es. '2025/2026').
             force_refresh:      Se True, ignora la cache e rifà lo scraping.
 
         Returns:
@@ -182,7 +184,7 @@ class TextbookFinderService:
                 cached = self._cache[cache_key]
                 return self._format_success(cached)
 
-            testi_raw, url_finale = self._run_scrape(nome=nome, cognome=cognome, exam_name=exam_name)
+            testi_raw, url_finale = self._run_scrape(nome=nome, cognome=cognome, exam_name=exam_name, academic_year=academic_year)
 
             result = TextbookResult(
                 esame=exam_name,
@@ -244,7 +246,7 @@ class TextbookFinderService:
     # SCRAPING (Playwright)
     # ------------------------------------------------------------------
 
-    def _run_scrape(self, nome: str, cognome: str, exam_name: str) -> tuple[str, str]:
+    def _run_scrape(self, nome: str, cognome: str, exam_name: str, academic_year: str = "") -> tuple[str, str]:
         """Wrapper sincrono attorno allo scraping async, gestisce il caso
         in cui venga chiamato da dentro un event loop già attivo (es. se
         l'AgenticRAG gira già dentro asyncio) usando un loop dedicato in
@@ -256,11 +258,11 @@ class TextbookFinderService:
             running = False
 
         if not running:
-            return asyncio.run(self._scrape_async(nome, cognome, exam_name))
+            return asyncio.run(self._scrape_async(nome, cognome, exam_name, academic_year))
 
         
         def _runner():
-            return asyncio.run(self._scrape_async(nome, cognome, exam_name))
+            return asyncio.run(self._scrape_async(nome, cognome, exam_name, academic_year))
 
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
@@ -268,7 +270,7 @@ class TextbookFinderService:
             return future.result()
     
     import re
-    async def _scrape_async(self, nome: str, cognome: str, exam_name: str) -> tuple[str, str]:
+    async def _scrape_async(self, nome: str, cognome: str, exam_name: str, academic_year: str = "") -> tuple[str, str]:
         from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError
 
         async with async_playwright() as p:
@@ -322,6 +324,27 @@ class TextbookFinderService:
                 # Navighiamo direttamente in Didattica inserendo il link!
                 await page.goto(url_didattica, wait_until="domcontentloaded")
                 await page.wait_for_load_state("networkidle")
+
+                if academic_year:
+                    # Rimuoviamo eventuali spazi extra per sicurezza
+                    academic_year = academic_year.strip()
+                    
+                    
+                    # Cerchiamo il pulsante del menu a tendina (quello nero che contiene "a.a. 20XX/20XX")
+                    dropdown_toggle = page.locator('button').filter(has_text=re.compile(r"a\.a\.\s*20\d{2}/20\d{2}")).first
+                    
+                    if await dropdown_toggle.count() > 0:
+                        # Clicca per aprire il menu a tendina
+                        await dropdown_toggle.click()
+                        await page.wait_for_selector(f"text=a.a. {academic_year}", state="visible", timeout=3000)# Aspetta l'animazione di apertura
+                        
+                        # Cerchiamo la voce specifica dell'anno (es. "a.a. 2025/2026")
+                        target_year = page.locator(f"text=a.a. {academic_year}").first
+                        if await target_year.count() > 0:
+                            await target_year.click()
+                            # Aspettiamo che il sito ricarichi i corsi per l'anno selezionato
+                            await page.wait_for_load_state("networkidle")
+                            await page.wait_for_timeout(1500)
 
                 # 5. Trova ed espandi il box dell'insegnamento
                 course_locator = page.get_by_text(exam_name, exact=False)
@@ -420,5 +443,5 @@ def _split_testi(raw: str) -> list[str]:
 if __name__ == "__main__":
     service = TextbookFinderService(headless=False) # Metti False per vedere il browser che si muove!
     # Testiamo con i dati degli screenshot
-    risultato = service.get_textbooks(exam_name="Artificial Intelligence for Cybersecurity", professor_nome="Antonio", professor_cognome="Greco")
+    risultato = service.get_textbooks(exam_name="Artificial Intelligence for Cybersecurity", professor_nome="Antonio", professor_cognome="Greco", academic_year="2025/2026")
     print(risultato)

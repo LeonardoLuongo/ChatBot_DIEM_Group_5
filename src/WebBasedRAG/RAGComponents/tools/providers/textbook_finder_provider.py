@@ -62,6 +62,10 @@ class TextbookFinderInput(BaseModel):
             "Lasciare '' se non fornito: il tool proverà a risolverlo automaticamente."
         )
     )
+    academic_year: str = Field(
+        default="",
+        description="L'anno accademico di riferimento (es. '2025/2026'). Se non specificato, il tool cercherà nell'anno corrente."
+    )
 
 
 # =========================================================================
@@ -131,6 +135,7 @@ class TextbookFinderToolProvider(ToolProvider):
         exam_name: str = "",
         professor_nome: str = "",
         professor_cognome: str = "",
+        academic_year: str = "",
     ) -> str:
         """Funzione principale del tool. Raccoglie i dati mancanti, risolve
         il docente e recupera i testi consigliati."""
@@ -170,6 +175,7 @@ class TextbookFinderToolProvider(ToolProvider):
             exam_name=exam,
             professor_nome=prof_nome or None,
             professor_cognome=prof_cogn or None,
+            academic_year=academic_year or None
         )
 
         # --- 3. Se il service chiede il docente, salviamo lo stato per

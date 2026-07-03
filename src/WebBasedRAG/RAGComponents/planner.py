@@ -84,8 +84,11 @@ CRITICAL TOOL ROUTING RULES (Memorize the difference between these tools):
 11. **BIBLIOGRAPHY / TEXTBOOK RETRIEVAL:**
     For ANY request regarding textbooks, recommended books, or bibliography for a course:
     1. FIRST, call `TextbookFinder`. 
-       - If you do not know the teacher, call `SearchProfessorDirectory` using the exam name as a search term to find the teacher's name first.
-       - Then, call `TextbookFinder` passing both the exam name and the retrieved teacher's name/surname.
+       - If you do not know the teacher, call `SearchProfessorDirectory` using the exam name as a search term to find the teacher's name first and take the year that the prof teaches the course for pass it at the second step.
+       - When calling `TextbookFinder`, you MUST pass:
+         a) the `exam_name`
+         b) the `professor_nome` and `professor_cognome`
+         c) the `academic_year` (ONLY IF the user explicitly specified it, e.g., "2025/2026", or if you found by the SearchProfessorDirectory tool). Otherwise, use the recent academic year.
     2. ONLY if all above steps fail, use `WebSearch` as a final extreme fallback.
      
 PLANNING RULES & CONSTRAINTS:
