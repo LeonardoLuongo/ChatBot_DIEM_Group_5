@@ -73,64 +73,79 @@ def pre_clean_unisa_html(raw_html, base_url):
     # Copiamo il titolo dell'Accordion e lo incolliamo FISICAMENTE dentro il contenuto
     for panel in tree.xpath('//div[contains(@class, "panel")]'):
         heading = panel.xpath('.//div[contains(@class, "panel-heading")]')
-        collapse = panel.xpath('.//div[contains(@class, "panel-collapse")]')
+        # Cerca il corpo, che sia collapse o normale
+        content_container = panel.xpath('.//div[contains(@class, "panel-collapse")] | .//div[contains(@class, "panel-body")]')
         
-        if heading and collapse:
+        if heading and content_container:
             title_text = heading[0].text_content().strip()
             if title_text:
                 # Creiamo un finto titolo <h3> da ficcare DENTRO il box nascosto
                 new_title = html.Element("h3")
-                new_title.text = f"RIGUARDO: {title_text.upper()}"
-                collapse[0].insert(0, new_title)
+                new_title.text = f"RIGUARDO {title_text.upper()}:"
+                # Incolla il titolo fisicamente dentro il box di testo
+                content_container[0].insert(0, new_title)
 
-    # Ora rendiamo i pannelli visibili e rimuoviamo le classi di stile
-    for panel_collapse in tree.xpath('//div[contains(@class, "panel-collapse")]'):
-        classes = panel_collapse.get("class", "")
-        panel_collapse.set("class", classes.replace("collapse", "").replace("in", ""))
+    for hidden_el in tree.xpath('//div[contains(@class, "collapse")]'):
+        classes = hidden_el.get("class", "")
+        hidden_el.set("class", classes.replace("collapse", "").replace("in", ""))
         for attr in ["style", "aria-expanded"]:
-            if attr in panel_collapse.attrib: 
-                del panel_collapse.attrib[attr]
+            if attr in hidden_el.attrib: 
+                del hidden_el.attrib[attr]
 
-    for title_link in tree.xpath('//h3[contains(@class, "panel-title")]/a'):
+    for title_link in tree.xpath('//h3[contains(@class, "panel-title")]/a | //h4[contains(@class, "panel-title")]/a'):
         title_link.tag = "span"       
         title_link.attrib.clear()
 
-    for table in tree.xpath('//table[contains(@class, "table")]'):
-        ul = html.Element("ul")
+    # 3. TABELLE: TRASFORMA IN PARAGRAFI PER SALVARE LINK E DATI (1, 2 o 3 colonne)
+    for table in tree.xpath('//table'):
+        div = html.Element("div")
         for row in table.xpath('.//tr'):
-            cells = row.xpath('.//td')
+            cells = row.xpath('.//td | .//th')
+            
+            if len(cells) == 0:
+                continue
+                
+            p = html.Element("p")
+            
+            # Assegnazione dinamica sicura
             if len(cells) >= 3:
                 chiave = cells[1].text_content().strip()
+                cella_valore = cells[2]
+            elif len(cells) == 2:
+                chiave = cells[0].text_content().strip()
+                cella_valore = cells[1]
+            else:
+                chiave = ""
+                cella_valore = cells[0]
+            
+            valore_pulito = " ".join(cella_valore.text_content().strip().split())
+            
+            if chiave or valore_pulito:
                 if chiave:
-                    li = html.Element("li")
                     b = html.Element("b")
                     b.text = f"{chiave}: "
-                    li.append(b)
-                    
-                    # Estraiamo il testo della terza cella (senza tag)
-                    valore = cells[2].text_content().strip()
-                    valore_pulito = " ".join(valore.split())
-                    
+                    p.append(b)
+                
+                if valore_pulito:
                     testo_nodo = html.Element("span")
                     testo_nodo.text = valore_pulito + " "
-                    li.append(testo_nodo)
-                    
-                    # 🚀 FIX: Salviamo i link! Li peschiamo dalla cella originale
-                    # e li ricostruiamo come tag <a> funzionanti
-                    for a in cells[2].xpath('.//a'):
-                        href = a.get('href')
-                        if href:
-                            nuovo_a = html.Element("a", href=href)
-                            nuovo_a.text = a.text_content().strip() or "Link"
-                            nuovo_a.tail = " "
-                            li.append(nuovo_a)
-                            
-                    ul.append(li)
-        if len(ul) > 0: table.getparent().replace(table, ul)
-        else: table.drop_tree()
+                    p.append(testo_nodo)
+                
+                # Salvataggio dei link
+                for a in cella_valore.xpath('.//a'):
+                    href = a.get('href')
+                    if href:
+                        nuovo_a = html.Element("a", href=href)
+                        nuovo_a.text = a.text_content().strip() or "Link"
+                        nuovo_a.tail = " "
+                        p.append(nuovo_a)
+                        
+                div.append(p)
+                
+        if len(div) > 0: 
+            table.getparent().replace(table, div)
 
-    # 3. Pulizia UI Testuale
-    # 3. Pulizia UI Testuale
+    # 4. Pulizia UI Testuale
     ui_garbage = ["torna su", "condividi", "previous", "next", "×", "‹", "›", "tutte le news", "agenda", "ultime news", "area riservata personale", "area riservata personale diem", "dettaglio", "filtro", "cerca"]
     for el in tree.xpath('//a | //button | //span | //i | //h1 | //h2 | //h3 | //h4 | //h5 | //h6 | //p'):
         if el.getparent() is None: continue
@@ -352,6 +367,7 @@ class WebExplorer:
                     url=url,
                     include_formatting=True,
                     include_tables=True,
+                    favor_recall=True,
                     include_links=True,
                     include_images=False,
                     include_comments=False

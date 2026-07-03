@@ -81,6 +81,7 @@ CRITICAL TOOL ROUTING RULES (Memorize the difference between these tools):
 - Identify any specific details or topics in the user's request, whether explicitly stated or fully deducible.
 - Include these specific terms in your search queries to ensure highly relevant results.
 10. GRADUATION GRADE: If the user wants to know the graduation grade, use `calcola_voto_laurea`.
+11. COURSE SYLLABUS / INFO: If the user asks for the syllabus or information about a specific course, you MUST instruct the executor to use the `WebSearch` tool and compose the search query exactly as: "[MATERIAL YOU NEED] [EXAM_NAME] DIEM UNISA [ACADEMIC_YEAR] [TEACHER_NAME] [TEACHER_SURNAME]". For example: "libri Data Science DIEM UNISA 2025/2026 Vincenzo Matta". You must have the teacher name before calling this tool.
 PLANNING RULES & CONSTRAINTS:
 - ATOMICITY: Each step must assign EXACTLY ONE 'tool_name' from the available tools.
 - DATA FLOW: Explicitly state in the 'tool_intent' how the agent should use the output of Step N to populate the schema of Step N+1.
