@@ -4,26 +4,61 @@ import jieba
 from typing import List
 import concurrent.futures
 from collections import OrderedDict
+import threading  
 from nltk.stem.snowball import SnowballStemmer
 from langdetect import detect, LangDetectException
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 class LRUCache(OrderedDict):
+    """
+    LRUCache Thread-Safe. Usa un Lock per evitare crash (KeyError)
+    durante scritture/letture concorrenti generate dai ThreadPoolExecutor.
+    """
     def __init__(self, maxsize=50, *args, **kwargs):
         self.maxsize = maxsize
+        self.lock = threading.Lock()
         super().__init__(*args, **kwargs)
 
     def __setitem__(self, key, value):
-        if key in self:
-            self.move_to_end(key)
-        super().__setitem__(key, value)
-        if len(self) > self.maxsize:
-            self.popitem(last=False)
+        with self.lock:
+            if key in self:
+                self.move_to_end(key)
+            super().__setitem__(key, value)
+            if len(self) > self.maxsize:
+                try:
+                    self.popitem(last=False)
+                except KeyError:
+                    pass  
 
     def __getitem__(self, key):
-        value = super().__getitem__(key)
-        self.move_to_end(key)
-        return value
+        with self.lock:
+            try:
+                value = super().__getitem__(key)
+                self.move_to_end(key)
+                return value
+            except KeyError:
+                raise
+
+    def get(self, key, default=None):
+        with self.lock:
+            if key in self:
+                value = super().__getitem__(key)
+                self.move_to_end(key)
+                return value
+            return default
+
+    def update(self, *args, **kwargs):
+        # Sovrascriviamo l'update per renderlo esplicitamente Thread-Safe
+        with self.lock:
+            for k, v in dict(*args, **kwargs).items():
+                if k in self:
+                    self.move_to_end(k)
+                super().__setitem__(k, v)
+                if len(self) > self.maxsize:
+                    try:
+                        self.popitem(last=False)
+                    except KeyError:
+                        pass
 
 class MultilingualProcessor:
     stemmers = {
