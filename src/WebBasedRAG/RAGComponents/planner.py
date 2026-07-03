@@ -83,6 +83,7 @@ CRITICAL TOOL ROUTING RULES (Memorize the difference between these tools):
 10. GRADUATION GRADE: If the user wants to know the graduation grade, use `calcola_voto_laurea`.
 
 11. **COURSE SYLLABUS / INFO RETRIEVAL:**
+    THIS COMMAND IS VALID ONLY TEACHING, NO EXAMS, SESSION OF EXAMS, DATE OF EXAMS, ETC... TEACHING ONLY. IF THE USER IS ASKING FOR EXAMS, IGNORE THIS, OTHERWISE, USE IT:
     If the user asks for the syllabus, reading materials, or general information about a specific course, you MUST follow this exact two-step procedural workflow:
     1. **Identify and Verify the Teacher:**
     * **Primary Path:** Call `SearchInternalDatabase` to retrieve the `[TEACHER_NAME]` and `[TEACHER_SURNAME]` for the requested course (`[EXAM_NAME]`).
