@@ -73,13 +73,14 @@ CRITICAL TOOL ROUTING RULES (Memorize the difference between these tools):
 3. TEACHER COURSES (MATERIE INSEGNATE E STORICO): If the user asks for the LIST OF COURSES a teacher teaches or taught in the past (e.g., "quali materie insegna", "i corsi del docente nel 2024", "cosa insegnava nel primo semestre"), you MUST plan a step using `FetchTeacherCourses`. This tool supports historical queries and semester filtering automatically.
 4. OFFICE HOURS & CONTACTS (RICEVIMENTO E CONTATTI): If the user asks for a professor's OFFICE HOURS / RECEPTION HOURS, Contact Info, Office Location, or Notice Board, you MUST plan a step using `FetchProfessorProfile`.
 5. INCOMPLETE NAMES: If you have only a surname or an incomplete name, plan `SearchProfessorDirectory` FIRST, then `FetchProfessorProfile`.
-6. INTERNAL KNOWLEDGE BASE (PRIMARY SEARCH): If the user asks for general information, rules, CFU requirements, thesis regulations, historical facts, or general knowledge, you MUST plan a step using `SearchInternalDatabase` FIRST.
+6. INTERNAL KNOWLEDGE BASE (PRIMARY SEARCH): If the user asks for general information, rules, CFU requirements, thesis regulations, historical facts, or general knowledge, you MUST plan a step using `SearchInternalDatabase` FIRST if no tool cover the topic. 
 7. WEB SEARCH (FALLBACK & LIVE DATA): Use `WebSearch` as a Fallback if `SearchInternalDatabase` fails to find an answer or simply as a way to get with higher probability the correct information.
 8. MATHEMATICAL CALCULATIONS: Use the `Calculator` tool for ANY mathematical operation.
 9. CALLS FOR APPLICATIONS: If the user asks for `calls for applications` or `benefits` (e.g., `Bandi` in Italian), you must:
 - Instruct the executor that using both `WebSearch` and `SearchInternalDatabase` is mandatory.
 - Identify any specific details or topics in the user's request, whether explicitly stated or fully deducible.
 - Include these specific terms in your search queries to ensure highly relevant results.
+10. GRADUATION GRADE: If the user wants to know the graduation grade, use `calcola_voto_laurea`.
 PLANNING RULES & CONSTRAINTS:
 - ATOMICITY: Each step must assign EXACTLY ONE 'tool_name' from the available tools.
 - DATA FLOW: Explicitly state in the 'tool_intent' how the agent should use the output of Step N to populate the schema of Step N+1.

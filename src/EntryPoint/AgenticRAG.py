@@ -263,15 +263,18 @@ INSTRUCTIONS:
                 return
 
             # ---------------------------------------------------------
-            # NUOVO BLOCCO: 4. ACTIVE CONTEXT PRUNING (Il Mietitore)
+            # 4. PULIZIA DEL CONTESTO (Stateless RAG)
             # ---------------------------------------------------------
-            pruned_count = self.session_state.prune_context(clean_query, self.evaluator, threshold=0.10)
-            if pruned_count > 0:
-                yield self.log("MEMORIA", f"🧹 Potatura: eliminati {pruned_count} documenti obsoleti.", color="#fb923c"), "⏳ *Valutazione cache...*"
+            # Svuotiamo i documenti RAG per evitare inquinamento tra domande,
+            # ma manteniamo intatta la memoria dei tool (self._tool_memory).
+            self.session_state.source_mapping.clear()
+            self.session_state._doc_counter = 0
+            
+            yield self.log("MEMORIA", "🧹 Contesto documentale azzerato per la nuova richiesta.", color="#fb923c"), "⏳ *Preparazione ricerca...*"
 
             feedback_for_search = ""
             is_resolved = False
-            context = self.session_state.get_all_context()
+            context = self.session_state.get_all_context() # Questo ora partirà sempre vuoto
             is_success = False
             final_result = None
 
