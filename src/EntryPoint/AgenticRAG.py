@@ -97,6 +97,8 @@ from WebBasedRAG.RAGComponents.tools.services.qdrant_service import QdrantServic
 from WebBasedRAG.RAGComponents.tools.providers.qdrant_provider import QdrantToolProvider
 from WebBasedRAG.RAGComponents.tools.services.graduation_grade_service import GraduationGradeService
 from WebBasedRAG.RAGComponents.tools.providers.graduation_grade_provider import GraduationGradeToolProvider
+from WebBasedRAG.RAGComponents.tools.services.textbook_finder_service import TextbookFinderService
+from WebBasedRAG.RAGComponents.tools.providers.textbook_finder_provider import TextbookFinderToolProvider
 
 import threading
 import requests
@@ -185,7 +187,7 @@ class AgenticRag:
             registry.register_provider(ProfessorsToolProvider(ProfessorsService(), self.session_state, self.explorer))
             registry.register_provider(MathToolProvider(session_state=self.session_state))
             registry.register_provider(GraduationGradeToolProvider(self.session_state))
-            
+            registry.register_provider(TextbookFinderToolProvider(self.session_state, headless=True))
             tools = registry.get_all_tools()
             
             # Componenti Core

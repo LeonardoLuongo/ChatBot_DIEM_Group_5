@@ -81,19 +81,12 @@ CRITICAL TOOL ROUTING RULES (Memorize the difference between these tools):
 - Identify any specific details or topics in the user's request, whether explicitly stated or fully deducible.
 - Include these specific terms in your search queries to ensure highly relevant results.
 10. GRADUATION GRADE: If the user wants to know the graduation grade, use `calcola_voto_laurea`.
-
-11. **COURSE SYLLABUS / INFO RETRIEVAL:**
-    THIS COMMAND IS VALID ONLY TEACHING, NO EXAMS, SESSION OF EXAMS, DATE OF EXAMS, ETC... TEACHING ONLY. IF THE USER IS ASKING FOR EXAMS, IGNORE THIS, OTHERWISE, USE IT:
-    If the user asks for the syllabus, reading materials, or general information about a specific course, you MUST follow this exact two-step procedural workflow:
-    1. **Identify and Verify the Teacher:**
-    * **Primary Path:** Call `SearchInternalDatabase` to retrieve the `[TEACHER_NAME]` and `[TEACHER_SURNAME]` for the requested course (`[EXAM_NAME]`).
-    * **Fallback Path (if NOT found in database):** If the internal database returns no results, use `WebSearch` to search for who teaches the course. For every teacher candidate found via the web, you MUST subsequently call `SearchProfessorDirectory` to verify and confirm that they officially belong to the DIEM department.
-    2. **Perform the Course Material Web Search:**
-    Once you have the confirmed DIEM teacher details from Step 1, instruct the executor to call `WebSearch` to find the syllabus/info. You MUST format the search query string exactly as follows:
-    `"[MATERIAL YOU NEED] [EXAM_NAME] DIEM UNISA [ACADEMIC_YEAR] [TEACHER_NAME] [TEACHER_SURNAME]"`
-    *Example query:* `"libri Data Science DIEM UNISA 2025/2026 Vincenzo Matta"`
-    
-12. EXAM DATES, SESSION OF EXAMS, EVERYTHING EXAM RELATED: Ignore AND DO NOT FOLLOW FOR ANY REASON THE INSTRUCTION ELEVEN (11).
+11. **BIBLIOGRAPHY / TEXTBOOK RETRIEVAL:**
+    For ANY request regarding textbooks, recommended books, or bibliography for a course:
+    1. FIRST, call `TextbookFinder`. 
+       - If you do not know the teacher, call `SearchProfessorDirectory` using the exam name as a search term to find the teacher's name first.
+       - Then, call `TextbookFinder` passing both the exam name and the retrieved teacher's name/surname.
+    2. ONLY if all above steps fail, use `WebSearch` as a final extreme fallback.
      
 PLANNING RULES & CONSTRAINTS:
 - ATOMICITY: Each step must assign EXACTLY ONE 'tool_name' from the available tools.
